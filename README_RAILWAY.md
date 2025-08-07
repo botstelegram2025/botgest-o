@@ -18,6 +18,28 @@ Este ZIP contém tudo que você precisa para fazer deploy no Railway:
 
 ```
 
+## 🔧 Correção para Forçar Dockerfile:
+Railway pode tentar usar Nixpacks. Para forçar Dockerfile:
+
+### **Método 1: Arquivo de Configuração**
+O `railway.json` já está configurado para forçar Dockerfile
+
+### **Método 2: Variável de Ambiente**
+No painel Railway, adicione:
+```
+RAILWAY_DOCKERFILE_PATH=Dockerfile.railway
+```
+
+### **Método 3: Renomear Dockerfile**
+```bash
+mv Dockerfile.railway Dockerfile
+```
+
+### **Método 4: Deploy Manual**
+No painel Railway:
+- Build Command: (vazio)
+- Start Command: `python3 start_railway.py`
+
 ## 🎯 Deploy em 5 Passos:
 
 ### 1. **Preparar Repositório GitHub**

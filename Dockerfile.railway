@@ -1,42 +1,43 @@
-# Dockerfile para Railway
+# Dockerfile.railway - Force Docker build
 FROM python:3.11-slim
 
-# Instalar Node.js para Baileys API
+# Install Node.js and system dependencies
 RUN apt-get update && apt-get install -y \
     nodejs \
     npm \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Definir diretório de trabalho
+# Set working directory
 WORKDIR /app
 
-# Copiar arquivos do projeto
-COPY . .
+# Copy requirements first for better caching
+COPY requirements.txt .
 
-# Instalar dependências Python
-RUN pip install --no-cache-dir \
-    python-telegram-bot \
-    psycopg2-binary \
-    apscheduler \
-    pytz \
-    qrcode \
-    pillow \
-    requests \
-    python-dotenv \
-    flask
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Instalar dependências Node.js
+# Copy baileys package.json
+COPY baileys-server/package.json ./baileys-server/
+
+# Install Node.js dependencies
 WORKDIR /app/baileys-server
 RUN npm install
 
-# Voltar para diretório principal
+# Go back to main directory
 WORKDIR /app
 
-# Criar diretório para auth
+# Copy all application files
+COPY . .
+
+# Create auth directory
 RUN mkdir -p /app/baileys-server/auth_info
 
-# Expor portas
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV RAILWAY_ENVIRONMENT=production
+
+# Expose ports
 EXPOSE 5001
 EXPOSE 3000
 
@@ -44,5 +45,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5001/health || exit 1
 
-# Comando para iniciar
+# Start command
 CMD ["python3", "start_railway.py"]
