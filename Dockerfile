@@ -1,4 +1,4 @@
-# Dockerfile.railway - Force Docker build
+# Dockerfile simplificado para Railway
 FROM python:3.11-slim
 
 # Install Node.js and system dependencies
@@ -11,22 +11,19 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy and install Python dependencies
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy baileys directory for Node.js dependencies
-COPY baileys-server/ ./baileys-server/
+# Copy entire project
+COPY . .
 
-# Install Node.js dependencies
+# Install Node.js dependencies for Baileys
 WORKDIR /app/baileys-server
 RUN npm install
 
-# Go back to main directory and copy remaining files
+# Back to main directory
 WORKDIR /app
-COPY . .
 
 # Create auth directory
 RUN mkdir -p /app/baileys-server/auth_info
