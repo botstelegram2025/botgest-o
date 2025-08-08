@@ -1,44 +1,52 @@
-# Dockerfile simplificado para Railway
+# Dockerfile otimizado para Railway
 FROM python:3.11-slim
 
-# Install Node.js and system dependencies
+# Instalar Node.js e dependências do sistema
 RUN apt-get update && apt-get install -y \
     nodejs \
     npm \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Definir diretório de trabalho
 WORKDIR /app
 
-# Copy and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy entire project
+# Copiar todos os arquivos primeiro
 COPY . .
 
-# Install Node.js dependencies for Baileys
-WORKDIR /app/baileys-server
-RUN npm install
+# Instalar dependências Python
+RUN pip install --no-cache-dir \
+    python-telegram-bot==20.7 \
+    psycopg2-binary>=2.9.10 \
+    APScheduler>=3.11.0 \
+    pytz>=2025.2 \
+    qrcode>=8.2 \
+    Pillow>=11.3.0 \
+    requests>=2.32.4 \
+    python-dotenv>=1.1.1 \
+    Flask>=3.1.1 \
+    gunicorn>=23.0.0
 
-# Back to main directory
-WORKDIR /app
+# Verificar se package.json existe e instalar dependências Node.js
+RUN if [ -f "/app/baileys-server/package.json" ]; then \
+        cd /app/baileys-server && npm install; \
+    else \
+        echo "package.json não encontrado em baileys-server"; \
+        exit 1; \
+    fi
 
-# Create auth directory
+# Criar diretório para autenticação WhatsApp
 RUN mkdir -p /app/baileys-server/auth_info
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV RAILWAY_ENVIRONMENT=production
+# Dar permissões necessárias
+RUN chmod +x /app/start_railway.py 2>/dev/null || true
 
-# Expose ports
-EXPOSE 5001
-EXPOSE 3000
+# Expor portas
+EXPOSE 5001 3000
 
-# Health check
+# Health check simples
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5001/health || exit 1
 
-# Start command
+# Comando para iniciar aplicação
 CMD ["python3", "start_railway.py"]

@@ -1,0 +1,14 @@
+# Dockerignore para otimizar build
+node_modules
+*.git*
+*.pyc
+__pycache__
+*.log
+.DS_Store
+*.md
+.env
+README.md
+.replit*
+replit.nix
+.vscode
+.idea
