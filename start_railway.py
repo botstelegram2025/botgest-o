@@ -271,4 +271,12 @@ def main():
         handle_shutdown(signal.SIGTERM, None)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("🛑 Interrupção por teclado recebida (CTRL+C)")
+        handle_shutdown(signal.SIGINT, None)
+    except Exception as e:
+        logger.error(f"❌ Erro inesperado: {e}", exc_info=True)
+        handle_shutdown(signal.SIGTERM, None)
+
