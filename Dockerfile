@@ -1,36 +1,25 @@
-# Dockerfile com instalação robusta do Node.js 20
-FROM node:20-slim as node-stage
+# Dockerfile - Base Node.js 20 com Python
+FROM node:20-slim
 
-# Verificar versão do Node.js na imagem base
-RUN node --version && npm --version
-
-# Usar Python como base principal e copiar Node.js
-FROM python:3.11-slim
-
-# Copiar Node.js da imagem anterior
-COPY --from=node-stage /usr/local/bin/node /usr/local/bin/
-COPY --from=node-stage /usr/local/bin/npm /usr/local/bin/
-COPY --from=node-stage /usr/local/bin/npx /usr/local/bin/
-COPY --from=node-stage /usr/local/include/node /usr/local/include/node
-COPY --from=node-stage /usr/local/lib/node_modules /usr/local/lib/node_modules
-
-# Criar link simbólico para compatibilidade
-RUN ln -sf /usr/local/bin/node /usr/bin/node && \
-    ln -sf /usr/local/bin/npm /usr/bin/npm && \
-    ln -sf /usr/local/bin/npx /usr/bin/npx
-
-# Verificar se Node.js 20 foi instalado corretamente
-RUN echo "🔍 Verificando Node.js instalado:" && \
+# Verificar Node.js já disponível
+RUN echo "🔍 Node.js na imagem base:" && \
     node --version && \
     npm --version && \
-    node --version | grep -E "v20\." && \
-    echo "✅ Node.js 20 instalado com sucesso!"
+    echo "✅ Node.js 20 confirmado!"
 
-# Instalar dependências do sistema
+# Instalar Python 3.11 e dependências
 RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
     curl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    echo "🔍 Python instalado:" && \
+    python3 --version && \
+    pip3 --version
 
 # Definir diretório de trabalho
 WORKDIR /app
@@ -39,7 +28,7 @@ WORKDIR /app
 COPY . .
 
 # Instalar dependências Python
-RUN pip install --no-cache-dir \
+RUN pip3 install --no-cache-dir \
     python-telegram-bot==20.7 \
     psycopg2-binary>=2.9.10 \
     APScheduler>=3.11.0 \
@@ -51,14 +40,13 @@ RUN pip install --no-cache-dir \
     Flask>=3.1.1 \
     gunicorn>=23.0.0
 
-# Verificar e instalar dependências Node.js com verificação robusta
+# Verificar e instalar dependências Node.js
 RUN if [ -f "/app/baileys-server/package.json" ]; then \
         cd /app/baileys-server && \
-        echo "🔍 Verificando Node.js antes do npm install..." && \
-        which node && \
-        node --version && \
+        echo "📦 Instalando dependências do Baileys com Node.js $(node --version)..." && \
+        echo "🔍 Verificando npm:" && \
+        which npm && \
         npm --version && \
-        echo "📦 Iniciando instalação das dependências do Baileys..." && \
         npm install --verbose && \
         echo "✅ Dependências do Baileys instaladas com sucesso!"; \
     else \

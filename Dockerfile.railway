@@ -1,36 +1,25 @@
-# Dockerfile.railway - Multi-stage com Node.js 20 garantido
-FROM node:20-slim as node-stage
+# Dockerfile.railway - Base Node.js 20 com Python
+FROM node:20-slim
 
-# Verificar versão do Node.js na imagem base
-RUN node --version && npm --version
-
-# Usar Python como base principal e copiar Node.js 20
-FROM python:3.11-slim
-
-# Copiar Node.js 20 da imagem anterior
-COPY --from=node-stage /usr/local/bin/node /usr/local/bin/
-COPY --from=node-stage /usr/local/bin/npm /usr/local/bin/
-COPY --from=node-stage /usr/local/bin/npx /usr/local/bin/
-COPY --from=node-stage /usr/local/include/node /usr/local/include/node
-COPY --from=node-stage /usr/local/lib/node_modules /usr/local/lib/node_modules
-
-# Criar link simbólico para compatibilidade
-RUN ln -sf /usr/local/bin/node /usr/bin/node && \
-    ln -sf /usr/local/bin/npm /usr/bin/npm && \
-    ln -sf /usr/local/bin/npx /usr/bin/npx
-
-# Verificar se Node.js 20 foi instalado corretamente
-RUN echo "🔍 Verificando Node.js instalado:" && \
+# Verificar Node.js já disponível
+RUN echo "🔍 Node.js na imagem base:" && \
     node --version && \
     npm --version && \
-    node --version | grep -E "v20\." && \
-    echo "✅ Node.js 20 instalado com sucesso!"
+    echo "✅ Node.js 20 confirmado!"
 
-# Instalar dependências do sistema
+# Instalar Python 3.11 e dependências
 RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
     curl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    echo "🔍 Python instalado:" && \
+    python3 --version && \
+    pip3 --version
 
 # Set working directory
 WORKDIR /app
@@ -39,18 +28,17 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy baileys directory for Node.js dependencies
 COPY baileys-server/ ./baileys-server/
 
-# Install Node.js dependencies com verificação robusta
+# Install Node.js dependencies with verification
 WORKDIR /app/baileys-server
-RUN echo "🔍 Verificando Node.js antes do npm install..." && \
-    which node && \
-    node --version && \
+RUN echo "📦 Instalando dependências do Baileys com Node.js $(node --version)..." && \
+    echo "🔍 Verificando npm:" && \
+    which npm && \
     npm --version && \
-    echo "📦 Iniciando instalação das dependências do Baileys..." && \
     npm install --verbose && \
     echo "✅ Dependências do Baileys instaladas com sucesso!"
 
