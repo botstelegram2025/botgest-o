@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Arquivo de inicialização SIMPLIFICADO para Railway
-Evita conflito de portas Flask
+Inicializador Railway - Versão Final Simplificada
+Inicia Baileys API e Bot de forma robusta
 """
 
 import os
@@ -11,158 +11,156 @@ import subprocess
 import threading
 import signal
 import logging
+from flask import Flask, jsonify
 
 # Configurar logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class RailwayStarter:
-    def __init__(self):
-        self.baileys_process = None
-        self.bot_process = None
-        self.running = True
+# Flask app para health check
+app = Flask(__name__)
+
+# Global processes
+baileys_process = None
+bot_thread = None
+running = True
+
+@app.route('/health')
+def health():
+    """Health check endpoint para Railway"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Bot Gestão Clientes Railway",
+        "baileys": baileys_process is not None and baileys_process.poll() is None,
+        "bot": bot_thread is not None and bot_thread.is_alive(),
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
+    }), 200
+
+@app.route('/')
+def root():
+    """Root endpoint"""
+    return jsonify({
+        "service": "Bot Gestão Clientes",
+        "status": "running",
+        "version": "1.0.0-railway",
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
+    })
+
+def start_baileys():
+    """Inicia Baileys API"""
+    global baileys_process
+    try:
+        logger.info("🚀 Iniciando Baileys API...")
+        os.chdir('/app/baileys-server')
         
-    def start_baileys_api(self):
-        """Inicia a API Baileys em background"""
-        try:
-            logger.info("🚀 Iniciando Baileys API...")
-            os.chdir('/app/baileys-server')
-            
-            # Verificar se package.json existe
-            if not os.path.exists('package.json'):
-                logger.warning("⚠️ package.json não encontrado em baileys-server")
-                return False
-                
-            # Iniciar servidor Node.js
-            self.baileys_process = subprocess.Popen(
-                ['node', 'server.js'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            logger.info("✅ Baileys API iniciada (PID: %d)", self.baileys_process.pid)
-            return True
-            
-        except Exception as e:
-            logger.warning("⚠️ Erro ao iniciar Baileys API: %s", e)
-            return False
-    
-    def start_bot(self):
-        """Inicia o bot Python (que já inclui Flask com /health)"""
-        try:
-            logger.info("🤖 Iniciando Bot Python...")
-            os.chdir('/app')
-            
-            # Verificar se arquivo principal existe
-            if not os.path.exists('bot_complete.py'):
-                logger.error("❌ bot_complete.py não encontrado")
-                return False
-            
-            # Configurar variáveis de ambiente para Railway
-            os.environ['PYTHONPATH'] = '/app'
-            os.environ['RAILWAY_ENVIRONMENT'] = 'production'
-            
-            # Iniciar bot (ele já tem Flask com endpoint /health)
-            self.bot_process = subprocess.Popen(
-                [sys.executable, 'bot_complete.py'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            logger.info("✅ Bot Python iniciado (PID: %d)", self.bot_process.pid)
-            return True
-            
-        except Exception as e:
-            logger.error("❌ Erro ao iniciar Bot: %s", e)
-            return False
-    
-    def monitor_processes(self):
-        """Monitora os processos e reinicia se necessário"""
-        while self.running:
+        baileys_process = subprocess.Popen(
+            ['node', 'server.js'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        logger.info(f"✅ Baileys API iniciada (PID: {baileys_process.pid})")
+        
+        # Log baileys output em thread separada
+        def log_baileys():
+            while baileys_process and baileys_process.poll() is None:
+                output = baileys_process.stdout.readline()
+                if output:
+                    logger.info(f"[Baileys] {output.strip()}")
+        
+        threading.Thread(target=log_baileys, daemon=True).start()
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao iniciar Baileys: {e}")
+
+def start_bot():
+    """Inicia bot em thread"""
+    try:
+        logger.info("🤖 Iniciando Bot...")
+        os.chdir('/app')
+        
+        # Importar e rodar bot
+        from bot_complete import TelegramBot, BOT_TOKEN
+        
+        bot = TelegramBot(BOT_TOKEN)
+        
+        # Inicializar serviços
+        if not bot.initialize_services():
+            logger.error("❌ Falha ao inicializar serviços do bot")
+            return
+        
+        logger.info("✅ Bot inicializado com sucesso!")
+        
+        # Polling loop
+        import requests
+        import json
+        
+        offset = None
+        while running:
             try:
-                # Verificar Baileys API
-                if self.baileys_process and self.baileys_process.poll() is not None:
-                    logger.warning("⚠️ Baileys API parou. Reiniciando...")
-                    self.start_baileys_api()
+                # Get updates
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+                params = {'timeout': 30}
+                if offset:
+                    params['offset'] = offset
                 
-                # Verificar Bot (CRÍTICO)
-                if self.bot_process and self.bot_process.poll() is not None:
-                    logger.error("❌ Bot parou! Reiniciando...")
-                    self.start_bot()
-                
-                time.sleep(30)  # Verificar a cada 30 segundos
-                
+                response = requests.get(url, params=params, timeout=35)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('ok') and data.get('result'):
+                        for update in data['result']:
+                            bot.process_message(update)
+                            offset = update['update_id'] + 1
+                else:
+                    logger.warning(f"Telegram API error: {response.status_code}")
+                    time.sleep(5)
+                    
             except Exception as e:
-                logger.error("❌ Erro no monitoramento: %s", e)
+                logger.error(f"Erro no bot polling: {e}")
                 time.sleep(10)
+                
+    except Exception as e:
+        logger.error(f"❌ Erro crítico no bot: {e}")
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    global running, baileys_process
+    logger.info(f"🛑 Shutdown signal {signum} received")
+    running = False
     
-    def handle_signal(self, signum, frame):
-        """Manipula sinais de parada"""
-        logger.info("🛑 Recebido sinal %d. Parando serviços...", signum)
-        self.running = False
-        
-        if self.baileys_process:
-            self.baileys_process.terminate()
-        
-        if self.bot_process:
-            self.bot_process.terminate()
-        
-        sys.exit(0)
+    if baileys_process:
+        baileys_process.terminate()
     
-    def start(self):
-        """Inicia todos os serviços"""
-        logger.info("🚀 Iniciando sistema no Railway...")
-        
-        # Configurar handlers de sinal
-        signal.signal(signal.SIGTERM, self.handle_signal)
-        signal.signal(signal.SIGINT, self.handle_signal)
-        
-        # Aguardar Railway configurar ambiente
-        time.sleep(2)
-        
-        # Iniciar Baileys API (opcional)
-        if not self.start_baileys_api():
-            logger.warning("⚠️ Baileys API não inicializou - continuando...")
-        
-        # Aguardar um pouco
-        time.sleep(3)
-        
-        # Iniciar Bot (CRÍTICO - tem Flask com /health)
-        if not self.start_bot():
-            logger.error("❌ FALHA CRÍTICA: Bot não iniciou")
-            return False
-        
-        logger.info("✅ Sistema iniciado! Bot tem Flask com endpoint /health")
-        
-        # Iniciar monitoramento
-        monitor_thread = threading.Thread(target=self.monitor_processes)
-        monitor_thread.daemon = True
-        monitor_thread.start()
-        
-        # Manter processo principal ativo
-        try:
-            while self.running:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            self.handle_signal(signal.SIGINT, None)
-        
-        return True
+    sys.exit(0)
 
 def main():
     """Função principal"""
+    global bot_thread
+    
+    logger.info("🚀 Iniciando sistema Railway...")
+    
+    # Setup signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Start Baileys API
+    start_baileys()
+    time.sleep(5)  # Wait for Baileys to start
+    
+    # Start bot in thread
+    bot_thread = threading.Thread(target=start_bot, daemon=True)
+    bot_thread.start()
+    
+    logger.info("✅ Todos os serviços iniciados!")
+    
+    # Start Flask server (blocking)
     try:
-        starter = RailwayStarter()
-        success = starter.start()
-        
-        if not success:
-            logger.error("❌ Falha crítica ao iniciar sistema")
-            sys.exit(1)
-            
-    except Exception as e:
-        logger.error("❌ Erro crítico: %s", e)
-        sys.exit(1)
+        app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    except KeyboardInterrupt:
+        signal_handler(signal.SIGINT, None)
 
 if __name__ == "__main__":
     main()

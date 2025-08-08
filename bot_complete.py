@@ -4643,18 +4643,8 @@ def initialize_bot():
         return False
 
 @app.route('/')
-def root():
-    """Root endpoint"""
-    return jsonify({
-        'service': 'Bot Gestão Clientes',
-        'status': 'running',
-        'version': '1.0.0',
-        'timestamp': datetime.now(TIMEZONE_BR).isoformat()
-    })
-
-@app.route('/health')
 def health_check():
-    """Health check endpoint for Railway"""
+    """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'service': 'Bot Telegram Completo - Sistema de Gestão de Clientes',

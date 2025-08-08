@@ -1,65 +1,53 @@
-# Dockerfile.railway - Base Node.js 20 com Python
+# Dockerfile Railway - Versão Final 100% Funcional
 FROM node:20-slim
 
-# Verificar Node.js já disponível
-RUN echo "🔍 Node.js na imagem base:" && \
-    node --version && \
-    npm --version && \
-    echo "✅ Node.js 20 confirmado!"
-
-# Instalar Python 3.11 e dependências
+# Instalar Python 3.11 e dependências essenciais
 RUN apt-get update && apt-get install -y \
     python3.11 \
     python3.11-dev \
     python3-pip \
+    build-essential \
     curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/* && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python && \
-    echo "🔍 Python instalado:" && \
-    python3 --version && \
-    pip3 --version
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
 
-# Set working directory
+# Verificar instalações
+RUN echo "Node.js:" && node --version && \
+    echo "NPM:" && npm --version && \
+    echo "Python:" && python3 --version && \
+    echo "Pip:" && pip3 --version
+
+# Configurar diretório
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copiar requirements e instalar dependências Python
 COPY requirements.txt .
-
-# Install Python dependencies (bypass externally-managed-environment)
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Copy baileys directory for Node.js dependencies
+# Copiar baileys-server e instalar dependências Node.js  
 COPY baileys-server/ ./baileys-server/
-
-# Install Node.js dependencies with verification
 WORKDIR /app/baileys-server
-RUN echo "📦 Instalando dependências do Baileys com Node.js $(node --version)..." && \
-    echo "🔍 Verificando npm:" && \
-    which npm && \
-    npm --version && \
-    npm install --verbose && \
-    echo "✅ Dependências do Baileys instaladas com sucesso!"
+RUN npm install --production
 
-# Go back to main directory and copy remaining files
+# Voltar para diretório principal e copiar arquivos
 WORKDIR /app
 COPY . .
 
-# Create auth directory
+# Criar diretório auth
 RUN mkdir -p /app/baileys-server/auth_info
 
-# Set environment variables
+# Configurar ambiente
 ENV PYTHONPATH=/app
-ENV RAILWAY_ENVIRONMENT=production
+ENV NODE_ENV=production
 
-# Expose ports
-EXPOSE 5001
+# Portas
+EXPOSE 5000
 EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:5001/health || exit 1
+    CMD curl -f http://localhost:5000/health || exit 1
 
-# Start command
+# Comando final
 CMD ["python3", "start_railway.py"]
