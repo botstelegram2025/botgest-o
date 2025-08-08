@@ -1069,23 +1069,47 @@ Use os botões abaixo para navegar:
             
             elif callback_data.startswith('enviar_template_'):
                 try:
+                    logger.info(f"Processando callback enviar_template: {callback_data}")
                     partes = callback_data.split('_')
-                    cliente_id = int(partes[2])
-                    template_id = int(partes[3])
-                    enviar_template_para_cliente_global(chat_id, cliente_id, template_id)
+                    logger.info(f"Partes do callback: {partes}")
+                    
+                    if len(partes) >= 4:
+                        cliente_id = int(partes[2])
+                        template_id = int(partes[3])
+                        logger.info(f"Extraindo IDs: cliente_id={cliente_id}, template_id={template_id}")
+                        enviar_template_para_cliente_global(chat_id, cliente_id, template_id)
+                    else:
+                        logger.error(f"Formato de callback inválido: {callback_data} - partes: {len(partes)}")
+                        self.send_message(chat_id, "❌ Formato de callback inválido.")
+                        
                 except (IndexError, ValueError) as e:
                     logger.error(f"Erro ao processar template: {e}")
                     self.send_message(chat_id, "❌ Erro ao processar template.")
+                except Exception as e:
+                    logger.error(f"Erro inesperado no callback enviar_template: {e}")
+                    self.send_message(chat_id, "❌ Erro inesperado.")
             
             elif callback_data.startswith('confirmar_envio_'):
                 try:
+                    logger.info(f"Processando callback confirmar_envio: {callback_data}")
                     partes = callback_data.split('_')
-                    cliente_id = int(partes[2])
-                    template_id = int(partes[3])
-                    confirmar_envio_mensagem_global(chat_id, cliente_id, template_id)
+                    logger.info(f"Partes do callback: {partes}")
+                    
+                    if len(partes) >= 4:
+                        cliente_id = int(partes[2])
+                        template_id = int(partes[3])
+                        logger.info(f"Extraindo IDs: cliente_id={cliente_id}, template_id={template_id}")
+                        confirmar_envio_mensagem_global(chat_id, cliente_id, template_id)
+                    else:
+                        logger.error(f"Formato de callback inválido: {callback_data} - partes: {len(partes)}")
+                        self.send_message(chat_id, "❌ Formato de callback inválido.")
+                        
                 except (IndexError, ValueError) as e:
                     logger.error(f"Erro ao confirmar envio: {e}")
                     self.send_message(chat_id, "❌ Erro ao enviar mensagem.")
+                except Exception as e:
+                    logger.error(f"Erro inesperado no callback confirmar_envio: {e}")
+                    self.send_message(chat_id, "❌ Erro inesperado.")
             
             elif callback_data.startswith('mensagem_custom_'):
                 try:
@@ -4791,25 +4815,47 @@ def process_pending_endpoint():
 def enviar_template_para_cliente_global(chat_id, cliente_id, template_id):
     """Confirma e envia template para cliente"""
     global telegram_bot
-    if telegram_bot:
-        try:
-            # Buscar cliente
-            cliente = telegram_bot.db.buscar_cliente_por_id(cliente_id) if telegram_bot.db else None
-            if not cliente:
-                telegram_bot.send_message(chat_id, "❌ Cliente não encontrado.")
-                return
+    
+    logger.info(f"Iniciando envio de template: chat_id={chat_id}, cliente_id={cliente_id}, template_id={template_id}")
+    
+    if not telegram_bot:
+        logger.error("telegram_bot não está disponível")
+        return
+        
+    try:
+        # Verificar se serviços estão disponíveis
+        if not telegram_bot.db:
+            logger.error("Database não disponível")
+            telegram_bot.send_message(chat_id, "❌ Erro: Database não disponível.")
+            return
             
-            # Buscar template
-            template = telegram_bot.template_manager.buscar_template_por_id(template_id) if telegram_bot.template_manager else None
-            if not template:
-                telegram_bot.send_message(chat_id, "❌ Template não encontrado.")
-                return
+        if not telegram_bot.template_manager:
+            logger.error("Template manager não disponível")
+            telegram_bot.send_message(chat_id, "❌ Erro: Template manager não disponível.")
+            return
             
-            # Processar template com dados do cliente
-            mensagem_processada = telegram_bot.template_manager.processar_template(template['conteudo'], cliente)
-            
-            # Mostrar preview da mensagem
-            preview = f"""📋 *Preview da Mensagem*
+        # Buscar cliente
+        logger.info(f"Buscando cliente {cliente_id}...")
+        cliente = telegram_bot.db.buscar_cliente_por_id(cliente_id)
+        if not cliente:
+            logger.error(f"Cliente {cliente_id} não encontrado")
+            telegram_bot.send_message(chat_id, "❌ Cliente não encontrado.")
+            return
+        
+        # Buscar template  
+        logger.info(f"Buscando template {template_id}...")
+        template = telegram_bot.template_manager.buscar_template_por_id(template_id)
+        if not template:
+            logger.error(f"Template {template_id} não encontrado")
+            telegram_bot.send_message(chat_id, "❌ Template não encontrado.")
+            return
+        
+        # Processar template com dados do cliente
+        logger.info("Processando template...")
+        mensagem_processada = telegram_bot.template_manager.processar_template(template['conteudo'], cliente)
+        
+        # Mostrar preview da mensagem
+        preview = f"""📋 *Preview da Mensagem*
 
 👤 *Para:* {cliente['nome']} ({cliente['telefone']})
 📄 *Template:* {template['nome']}
@@ -4819,79 +4865,102 @@ def enviar_template_para_cliente_global(chat_id, cliente_id, template_id):
 {mensagem_processada}
 
 ✅ Confirmar envio?"""
-            
-            inline_keyboard = [
-                [
-                    {'text': '✅ Enviar Mensagem', 'callback_data': f'confirmar_envio_{cliente_id}_{template_id}'},
-                    {'text': '✏️ Editar Mensagem', 'callback_data': f'editar_mensagem_{cliente_id}_{template_id}'}
-                ],
-                [{'text': '🔙 Escolher Outro Template', 'callback_data': f'enviar_mensagem_{cliente_id}'}]
-            ]
-            
-            telegram_bot.send_message(chat_id, preview,
-                            parse_mode='Markdown',
-                            reply_markup={'inline_keyboard': inline_keyboard})
+        
+        inline_keyboard = [
+            [
+                {'text': '✅ Enviar Mensagem', 'callback_data': f'confirmar_envio_{cliente_id}_{template_id}'},
+                {'text': '✏️ Editar Mensagem', 'callback_data': f'editar_mensagem_{cliente_id}_{template_id}'}
+            ],
+            [{'text': '🔙 Escolher Outro Template', 'callback_data': f'enviar_mensagem_{cliente_id}'}]
+        ]
+        
+        telegram_bot.send_message(chat_id, preview,
+                        parse_mode='Markdown',
+                        reply_markup={'inline_keyboard': inline_keyboard})
                             
-        except Exception as e:
-            logger.error(f"Erro ao preparar envio de template: {e}")
+    except Exception as e:
+        logger.error(f"Erro ao preparar envio de template: {e}")
+        if telegram_bot:
             telegram_bot.send_message(chat_id, "❌ Erro ao processar template.")
 
 def confirmar_envio_mensagem_global(chat_id, cliente_id, template_id):
     """Envia mensagem definitivamente para o cliente"""
     global telegram_bot
-    if telegram_bot:
-        try:
-            # Buscar cliente e template
-            cliente = telegram_bot.db.buscar_cliente_por_id(cliente_id) if telegram_bot.db else None
-            template = telegram_bot.template_manager.buscar_template_por_id(template_id) if telegram_bot.template_manager else None
+    
+    logger.info(f"Confirmando envio: chat_id={chat_id}, cliente_id={cliente_id}, template_id={template_id}")
+    
+    if not telegram_bot:
+        logger.error("telegram_bot não está disponível para confirmação de envio")
+        return
+        
+    try:
+        # Verificar se serviços estão disponíveis
+        if not telegram_bot.db:
+            logger.error("Database não disponível")
+            telegram_bot.send_message(chat_id, "❌ Erro: Database não disponível.")
+            return
             
-            if not cliente or not template:
-                telegram_bot.send_message(chat_id, "❌ Cliente ou template não encontrado.")
-                return
+        if not telegram_bot.template_manager:
+            logger.error("Template manager não disponível")
+            telegram_bot.send_message(chat_id, "❌ Erro: Template manager não disponível.")
+            return
             
-            # Processar mensagem
-            mensagem = telegram_bot.template_manager.processar_template(template['conteudo'], cliente)
-            telefone = cliente['telefone']
-            
-            # Tentar enviar via WhatsApp
-            sucesso = False
-            erro_msg = ""
-            
-            if telegram_bot.baileys_api:
-                try:
-                    resultado = telegram_bot.baileys_api.send_message(telefone, mensagem)
-                    if resultado['success']:
-                        sucesso = True
-                        
-                        # Registrar log de sucesso no banco
-                        if telegram_bot.db:
-                            telegram_bot.db.registrar_envio(
-                                cliente_id=cliente_id,
-                                template_id=template_id,
-                                telefone=telefone,
-                                mensagem=mensagem,
-                                tipo_envio='template_manual',
-                                sucesso=True,
-                                message_id=resultado.get('messageId')
-                            )
-                        
-                        # Incrementar contador de uso do template
-                        if telegram_bot.template_manager:
-                            telegram_bot.template_manager.incrementar_uso_template(template_id)
-                            
-                    else:
-                        erro_msg = resultado.get('error', 'Erro desconhecido')
-                        
-                except Exception as e:
-                    erro_msg = str(e)
+        # Buscar cliente e template
+        logger.info(f"Buscando cliente {cliente_id} e template {template_id}...")
+        cliente = telegram_bot.db.buscar_cliente_por_id(cliente_id)
+        template = telegram_bot.template_manager.buscar_template_por_id(template_id)
+        
+        if not cliente or not template:
+            logger.error(f"Cliente {cliente_id} ou template {template_id} não encontrado")
+            telegram_bot.send_message(chat_id, "❌ Cliente ou template não encontrado.")
+            return
+        
+        # Processar mensagem
+        logger.info("Processando mensagem...")
+        mensagem = telegram_bot.template_manager.processar_template(template['conteudo'], cliente)
+        telefone = cliente['telefone']
+        
+        # Tentar enviar via WhatsApp
+        sucesso = False
+        erro_msg = ""
+        
+        if telegram_bot.baileys_api:
+            try:
+                logger.info(f"Enviando mensagem WhatsApp para {telefone}")
+                resultado = telegram_bot.baileys_api.send_message(telefone, mensagem)
+                if resultado['success']:
+                    sucesso = True
                     
-            else:
-                erro_msg = "API WhatsApp não inicializada"
-            
-            # Preparar resposta
-            if sucesso:
-                from datetime import datetime
-                resposta = f"""✅ *Mensagem Enviada com Sucesso!*
+                    # Registrar log de sucesso no banco
+                    if telegram_bot.db:
+                        telegram_bot.db.registrar_envio(
+                            cliente_id=cliente_id,
+                            template_id=template_id,
+                            telefone=telefone,
+                            mensagem=mensagem,
+                            tipo_envio='template_manual',
+                            sucesso=True,
+                            message_id=resultado.get('messageId')
+                        )
+                    
+                    # Incrementar contador de uso do template
+                    if telegram_bot.template_manager:
+                        telegram_bot.template_manager.incrementar_uso_template(template_id)
+                        
+                else:
+                    erro_msg = resultado.get('error', 'Erro desconhecido')
+                    
+            except Exception as e:
+                logger.error(f"Erro ao enviar mensagem WhatsApp: {e}")
+                erro_msg = str(e)
+                
+        else:
+            erro_msg = "API WhatsApp não inicializada"
+        
+        # Preparar resposta
+        if sucesso:
+            from datetime import datetime
+            resposta = f"""✅ *Mensagem Enviada com Sucesso!*
 
 👤 *Cliente:* {cliente['nome']}
 📱 *Telefone:* {telefone}
@@ -4902,29 +4971,29 @@ def confirmar_envio_mensagem_global(chat_id, cliente_id, template_id):
 {mensagem[:200]}{'...' if len(mensagem) > 200 else ''}
 
 📊 *Template usado {template.get('uso_count', 0) + 1}ª vez*"""
-                
-                inline_keyboard = [
-                    [
-                        {'text': '📄 Enviar Outro Template', 'callback_data': f'enviar_mensagem_{cliente_id}'},
-                        {'text': '👤 Ver Cliente', 'callback_data': f'cliente_detalhes_{cliente_id}'}
-                    ],
-                    [{'text': '📋 Logs de Envio', 'callback_data': 'baileys_logs'}]
-                ]
-                
-            else:
-                # Registrar log de erro no banco
-                if telegram_bot.db:
-                    telegram_bot.db.registrar_envio(
-                        cliente_id=cliente_id,
-                        template_id=template_id,
-                        telefone=telefone,
-                        mensagem=mensagem,
-                        tipo_envio='template_manual',
-                        sucesso=False,
-                        erro=erro_msg
-                    )
-                
-                resposta = f"""❌ *Falha no Envio*
+            
+            inline_keyboard = [
+                [
+                    {'text': '📄 Enviar Outro Template', 'callback_data': f'enviar_mensagem_{cliente_id}'},
+                    {'text': '👤 Ver Cliente', 'callback_data': f'cliente_detalhes_{cliente_id}'}
+                ],
+                [{'text': '📋 Logs de Envio', 'callback_data': 'baileys_logs'}]
+            ]
+            
+        else:
+            # Registrar log de erro no banco
+            if telegram_bot.db:
+                telegram_bot.db.registrar_envio(
+                    cliente_id=cliente_id,
+                    template_id=template_id,
+                    telefone=telefone,
+                    mensagem=mensagem,
+                    tipo_envio='template_manual',
+                    sucesso=False,
+                    erro=erro_msg
+                )
+            
+            resposta = f"""❌ *Falha no Envio*
 
 👤 *Cliente:* {cliente['nome']}
 📱 *Telefone:* {telefone}
@@ -4937,21 +5006,22 @@ def confirmar_envio_mensagem_global(chat_id, cliente_id, template_id):
 • Confirme se o número está correto
 • Tente reconectar o WhatsApp
 • Aguarde alguns minutos e tente novamente"""
-                
-                inline_keyboard = [
-                    [
-                        {'text': '🔄 Tentar Novamente', 'callback_data': f'confirmar_envio_{cliente_id}_{template_id}'},
-                        {'text': '📱 Status WhatsApp', 'callback_data': 'baileys_status'}
-                    ],
-                    [{'text': '🔙 Voltar', 'callback_data': f'cliente_detalhes_{cliente_id}'}]
-                ]
             
-            telegram_bot.send_message(chat_id, resposta,
-                            parse_mode='Markdown',
-                            reply_markup={'inline_keyboard': inline_keyboard})
-                            
-        except Exception as e:
-            logger.error(f"Erro ao enviar mensagem: {e}")
+            inline_keyboard = [
+                [
+                    {'text': '🔄 Tentar Novamente', 'callback_data': f'confirmar_envio_{cliente_id}_{template_id}'},
+                    {'text': '📱 Status WhatsApp', 'callback_data': 'baileys_status'}
+                ],
+                [{'text': '🔙 Voltar', 'callback_data': f'cliente_detalhes_{cliente_id}'}]
+            ]
+        
+        telegram_bot.send_message(chat_id, resposta,
+                        parse_mode='Markdown',
+                        reply_markup={'inline_keyboard': inline_keyboard})
+                        
+    except Exception as e:
+        logger.error(f"Erro ao enviar mensagem: {e}")
+        if telegram_bot:
             telegram_bot.send_message(chat_id, "❌ Erro crítico no envio de mensagem.")
 
 def iniciar_mensagem_personalizada_global(chat_id, cliente_id):
@@ -5014,6 +5084,6 @@ if __name__ == '__main__':
     else:
         logger.warning("⚠️ Bot não inicializado completamente, mas servidor Flask será executado")
     
-# ⚠️ A execução do bot e do servidor Flask é feita em start_railway.py
+   # ⚠️ A execução do bot e do servidor Flask é feita em start_railway.py
 # Este arquivo só deve definir classes e funções.
 # Não inicie nada diretamente aqui!
