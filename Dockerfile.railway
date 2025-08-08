@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     ca-certificates \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Criar links simbólicos para usar python3 e pip
