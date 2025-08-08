@@ -1,0 +1,77 @@
+# Dockerfile.railway - Multi-stage com Node.js 20 garantido
+FROM node:20-slim as node-stage
+
+# Verificar versão do Node.js na imagem base
+RUN node --version && npm --version
+
+# Usar Python como base principal e copiar Node.js 20
+FROM python:3.11-slim
+
+# Copiar Node.js 20 da imagem anterior
+COPY --from=node-stage /usr/local/bin/node /usr/local/bin/
+COPY --from=node-stage /usr/local/bin/npm /usr/local/bin/
+COPY --from=node-stage /usr/local/bin/npx /usr/local/bin/
+COPY --from=node-stage /usr/local/include/node /usr/local/include/node
+COPY --from=node-stage /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+# Criar link simbólico para compatibilidade
+RUN ln -sf /usr/local/bin/node /usr/bin/node && \
+    ln -sf /usr/local/bin/npm /usr/bin/npm && \
+    ln -sf /usr/local/bin/npx /usr/bin/npx
+
+# Verificar se Node.js 20 foi instalado corretamente
+RUN echo "🔍 Verificando Node.js instalado:" && \
+    node --version && \
+    npm --version && \
+    node --version | grep -E "v20\." && \
+    echo "✅ Node.js 20 instalado com sucesso!"
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy baileys directory for Node.js dependencies
+COPY baileys-server/ ./baileys-server/
+
+# Install Node.js dependencies com verificação robusta
+WORKDIR /app/baileys-server
+RUN echo "🔍 Verificando Node.js antes do npm install..." && \
+    which node && \
+    node --version && \
+    npm --version && \
+    echo "📦 Iniciando instalação das dependências do Baileys..." && \
+    npm install --verbose && \
+    echo "✅ Dependências do Baileys instaladas com sucesso!"
+
+# Go back to main directory and copy remaining files
+WORKDIR /app
+COPY . .
+
+# Create auth directory
+RUN mkdir -p /app/baileys-server/auth_info
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV RAILWAY_ENVIRONMENT=production
+
+# Expose ports
+EXPOSE 5001
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5001/health || exit 1
+
+# Start command
+CMD ["python3", "start_railway.py"]
