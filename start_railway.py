@@ -245,7 +245,7 @@ def main():
     time.sleep(3)
 
     logger.info("✅ Todos os serviços configurados!")
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", 5001))
     logger.info(f"🌐 Iniciando servidor Flask na porta {port}...")
 
     try:
