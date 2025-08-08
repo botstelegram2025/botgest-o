@@ -68,4 +68,5 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=5 \
     CMD curl -f http://localhost:5000/health || exit 1
 
 # Comando de inicialização
-CMD ["python", "start_railway.py"]
+CMD ["python3", "start_railway.py"]
+
