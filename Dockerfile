@@ -1,25 +1,41 @@
-# Dockerfile otimizado para Railway com Node.js 20
+# Dockerfile com instalação robusta do Node.js 20
+FROM node:20-slim as node-stage
+
+# Verificar versão do Node.js na imagem base
+RUN node --version && npm --version
+
+# Usar Python como base principal e copiar Node.js
 FROM python:3.11-slim
 
-# Instalar Node.js 20 e dependências do sistema
+# Copiar Node.js da imagem anterior
+COPY --from=node-stage /usr/local/bin/node /usr/local/bin/
+COPY --from=node-stage /usr/local/bin/npm /usr/local/bin/
+COPY --from=node-stage /usr/local/bin/npx /usr/local/bin/
+COPY --from=node-stage /usr/local/include/node /usr/local/include/node
+COPY --from=node-stage /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+# Criar link simbólico para compatibilidade
+RUN ln -sf /usr/local/bin/node /usr/bin/node && \
+    ln -sf /usr/local/bin/npm /usr/bin/npm && \
+    ln -sf /usr/local/bin/npx /usr/bin/npx
+
+# Verificar se Node.js 20 foi instalado corretamente
+RUN echo "🔍 Verificando Node.js instalado:" && \
+    node --version && \
+    npm --version && \
+    node --version | grep -E "v20\." && \
+    echo "✅ Node.js 20 instalado com sucesso!"
+
+# Instalar dependências do sistema
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
-    gnupg \
     && rm -rf /var/lib/apt/lists/*
-
-# Instalar Node.js 20 via NodeSource
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Verificar versões instaladas
-RUN node --version && npm --version
 
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar todos os arquivos primeiro
+# Copiar todos os arquivos
 COPY . .
 
 # Instalar dependências Python
@@ -35,11 +51,18 @@ RUN pip install --no-cache-dir \
     Flask>=3.1.1 \
     gunicorn>=23.0.0
 
-# Verificar se package.json existe e instalar dependências Node.js
+# Verificar e instalar dependências Node.js com verificação robusta
 RUN if [ -f "/app/baileys-server/package.json" ]; then \
-        cd /app/baileys-server && npm install; \
+        cd /app/baileys-server && \
+        echo "🔍 Verificando Node.js antes do npm install..." && \
+        which node && \
+        node --version && \
+        npm --version && \
+        echo "📦 Iniciando instalação das dependências do Baileys..." && \
+        npm install --verbose && \
+        echo "✅ Dependências do Baileys instaladas com sucesso!"; \
     else \
-        echo "package.json não encontrado em baileys-server"; \
+        echo "❌ package.json não encontrado em baileys-server"; \
         exit 1; \
     fi
 
@@ -52,7 +75,7 @@ RUN chmod +x /app/start_railway.py 2>/dev/null || true
 # Expor portas
 EXPOSE 5001 3000
 
-# Health check simples
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5001/health || exit 1
 
