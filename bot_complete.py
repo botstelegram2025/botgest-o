@@ -5009,7 +5009,13 @@ if __name__ == '__main__':
     else:
         logger.warning("⚠️ Bot não inicializado completamente, mas servidor Flask será executado")
     
-    # Iniciar servidor Flask
-    port = int(os.getenv('PORT', 5001))
-    logger.info(f"Iniciando servidor Flask na porta {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+   # Iniciar servidor Flask
+port = int(os.getenv('PORT', 5001))
+logger.info(f"🌐 Iniciando servidor Flask na porta {port}")
+app.run(
+    host='0.0.0.0',
+    port=port,
+    debug=False,
+    use_reloader=False,  # Evita reinicializações duplas
+    threaded=True         # Permite múltiplas conexões simultâneas
+)
