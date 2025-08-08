@@ -1077,7 +1077,7 @@ Use os botões abaixo para navegar:
                         cliente_id = int(partes[2])
                         template_id = int(partes[3])
                         logger.info(f"Extraindo IDs: cliente_id={cliente_id}, template_id={template_id}")
-                        enviar_template_para_cliente_global(chat_id, cliente_id, template_id)
+                        self.enviar_template_para_cliente(chat_id, cliente_id, template_id)
                     else:
                         logger.error(f"Formato de callback inválido: {callback_data} - partes: {len(partes)}")
                         self.send_message(chat_id, "❌ Formato de callback inválido.")
@@ -1091,21 +1091,22 @@ Use os botões abaixo para navegar:
             
             elif callback_data.startswith('confirmar_envio_'):
                 try:
-                    logger.info(f"Processando callback confirmar_envio: {callback_data}")
+                    logger.info(f"[RAILWAY] Processando callback confirmar_envio: {callback_data}")
                     partes = callback_data.split('_')
-                    logger.info(f"Partes do callback: {partes}")
+                    logger.info(f"[RAILWAY] Partes do callback: {partes}")
                     
                     if len(partes) >= 4:
                         cliente_id = int(partes[2])
                         template_id = int(partes[3])
-                        logger.info(f"Extraindo IDs: cliente_id={cliente_id}, template_id={template_id}")
-                        confirmar_envio_mensagem_global(chat_id, cliente_id, template_id)
+                        logger.info(f"[RAILWAY] Extraindo IDs: cliente_id={cliente_id}, template_id={template_id}")
+                        # Corrigido: Usar método da instância ao invés de função global
+                        self.confirmar_envio_mensagem(chat_id, cliente_id, template_id)
                     else:
-                        logger.error(f"Formato de callback inválido: {callback_data} - partes: {len(partes)}")
+                        logger.error(f"[RAILWAY] Formato de callback inválido: {callback_data} - partes: {len(partes)}")
                         self.send_message(chat_id, "❌ Formato de callback inválido.")
                         
                 except (IndexError, ValueError) as e:
-                    logger.error(f"Erro ao confirmar envio: {e}")
+                    logger.error(f"[RAILWAY] Erro ao confirmar envio: {e}")
                     self.send_message(chat_id, "❌ Erro ao enviar mensagem.")
                 except Exception as e:
                     logger.error(f"Erro inesperado no callback confirmar_envio: {e}")
@@ -4629,6 +4630,272 @@ _Mensagem automática de teste do bot_ 🤖"""
         except Exception as e:
             logger.error(f"Erro ao cancelar mensagem: {e}")
             self.send_message(chat_id, f"❌ Erro ao cancelar mensagem: {str(e)}")
+    
+    def enviar_template_para_cliente(self, chat_id, cliente_id, template_id):
+        """Confirma e envia template para cliente (versão Railway-optimized)"""
+        logger.info(f"[RAILWAY] Iniciando envio de template: chat_id={chat_id}, cliente_id={cliente_id}, template_id={template_id}")
+        
+        try:
+            # Verificar se serviços estão disponíveis
+            if not self.db:
+                logger.error("[RAILWAY] Database não disponível")
+                self.send_message(chat_id, "❌ Erro: Database não disponível.")
+                return
+                
+            if not self.template_manager:
+                logger.error("[RAILWAY] Template manager não disponível")
+                self.send_message(chat_id, "❌ Erro: Template manager não disponível.")
+                return
+                
+            # Buscar cliente
+            logger.info(f"[RAILWAY] Buscando cliente {cliente_id}...")
+            cliente = self.buscar_cliente_por_id(cliente_id)
+            if not cliente:
+                logger.error(f"[RAILWAY] Cliente {cliente_id} não encontrado")
+                self.send_message(chat_id, "❌ Cliente não encontrado.")
+                return
+            
+            # Buscar template  
+            logger.info(f"[RAILWAY] Buscando template {template_id}...")
+            template = self.buscar_template_por_id(template_id)
+            if not template:
+                logger.error(f"[RAILWAY] Template {template_id} não encontrado")
+                self.send_message(chat_id, "❌ Template não encontrado.")
+                return
+            
+            # Processar template com dados do cliente
+            logger.info("[RAILWAY] Processando template...")
+            mensagem_processada = self.processar_template(template['conteudo'], cliente)
+            
+            # Mostrar preview da mensagem
+            preview = f"""📋 *Preview da Mensagem*
+
+👤 *Para:* {cliente['nome']} ({cliente['telefone']})
+📄 *Template:* {template['nome']}
+
+📝 *Mensagem que será enviada:*
+
+{mensagem_processada}
+
+✅ Confirmar envio?"""
+            
+            inline_keyboard = [
+                [
+                    {'text': '✅ Enviar Mensagem', 'callback_data': f'confirmar_envio_{cliente_id}_{template_id}'},
+                    {'text': '✏️ Editar Mensagem', 'callback_data': f'editar_mensagem_{cliente_id}_{template_id}'}
+                ],
+                [{'text': '🔙 Escolher Outro Template', 'callback_data': f'enviar_mensagem_{cliente_id}'}]
+            ]
+            
+            self.send_message(chat_id, preview,
+                            parse_mode='Markdown',
+                            reply_markup={'inline_keyboard': inline_keyboard})
+                                
+        except Exception as e:
+            logger.error(f"[RAILWAY] Erro ao preparar envio de template: {e}")
+            self.send_message(chat_id, "❌ Erro ao processar template.")
+    
+    def confirmar_envio_mensagem(self, chat_id, cliente_id, template_id):
+        """Envia mensagem definitivamente para o cliente (versão Railway-optimized)"""
+        logger.info(f"[RAILWAY] Confirmando envio: chat_id={chat_id}, cliente_id={cliente_id}, template_id={template_id}")
+        
+        try:
+            # Verificar se serviços estão disponíveis
+            if not self.db:
+                logger.error("[RAILWAY] Database não disponível")
+                self.send_message(chat_id, "❌ Erro: Database não disponível.")
+                return
+                
+            if not self.template_manager:
+                logger.error("[RAILWAY] Template manager não disponível")
+                self.send_message(chat_id, "❌ Erro: Template manager não disponível.")
+                return
+                
+            # Buscar cliente e template
+            logger.info(f"[RAILWAY] Buscando cliente {cliente_id} e template {template_id}...")
+            cliente = self.buscar_cliente_por_id(cliente_id)
+            template = self.buscar_template_por_id(template_id)
+            
+            if not cliente or not template:
+                logger.error(f"[RAILWAY] Cliente {cliente_id} ou template {template_id} não encontrado")
+                self.send_message(chat_id, "❌ Cliente ou template não encontrado.")
+                return
+            
+            # Processar mensagem
+            logger.info("[RAILWAY] Processando mensagem...")
+            mensagem = self.processar_template(template['conteudo'], cliente)
+            telefone = cliente['telefone']
+            
+            # Tentar enviar via WhatsApp
+            sucesso = False
+            erro_msg = ""
+            
+            if self.baileys_api:
+                try:
+                    logger.info(f"[RAILWAY] Enviando mensagem WhatsApp para {telefone}")
+                    resultado = self.baileys_api.send_message(telefone, mensagem)
+                    if resultado['success']:
+                        sucesso = True
+                        
+                        # Registrar log de sucesso no banco
+                        self.registrar_envio(
+                            cliente_id=cliente_id,
+                            template_id=template_id,
+                            telefone=telefone,
+                            mensagem=mensagem,
+                            tipo_envio='template_manual',
+                            sucesso=True,
+                            message_id=resultado.get('messageId')
+                        )
+                        
+                        # Incrementar contador de uso do template
+                        self.incrementar_uso_template(template_id)
+                            
+                    else:
+                        erro_msg = resultado.get('error', 'Erro desconhecido')
+                        
+                except Exception as e:
+                    logger.error(f"[RAILWAY] Erro ao enviar mensagem WhatsApp: {e}")
+                    erro_msg = str(e)
+                    
+            else:
+                erro_msg = "API WhatsApp não inicializada"
+            
+            # Preparar resposta
+            if sucesso:
+                from datetime import datetime
+                resposta = f"""✅ *Mensagem Enviada com Sucesso!*
+
+👤 *Cliente:* {cliente['nome']}
+📱 *Telefone:* {telefone}
+📄 *Template:* {template['nome']}
+🕐 *Enviado em:* {datetime.now().strftime('%d/%m/%Y às %H:%M')}
+
+💬 *Mensagem enviada:*
+{mensagem[:200]}{'...' if len(mensagem) > 200 else ''}
+
+📊 *Template usado {template.get('uso_count', 0) + 1}ª vez*"""
+                
+                inline_keyboard = [
+                    [
+                        {'text': '📄 Enviar Outro Template', 'callback_data': f'enviar_mensagem_{cliente_id}'},
+                        {'text': '👤 Ver Cliente', 'callback_data': f'cliente_detalhes_{cliente_id}'}
+                    ],
+                    [{'text': '📋 Logs de Envio', 'callback_data': 'baileys_logs'}]
+                ]
+                
+            else:
+                # Registrar log de erro no banco
+                self.registrar_envio(
+                    cliente_id=cliente_id,
+                    template_id=template_id,
+                    telefone=telefone,
+                    mensagem=mensagem,
+                    tipo_envio='template_manual',
+                    sucesso=False,
+                    erro=erro_msg
+                )
+                
+                resposta = f"""❌ *Falha no Envio*
+
+👤 *Cliente:* {cliente['nome']}
+📱 *Telefone:* {telefone}
+📄 *Template:* {template['nome']}
+
+🔍 *Erro:* {erro_msg}
+
+💡 *Possíveis soluções:*
+- Verificar conexão WhatsApp
+- Verificar número do telefone
+- Tentar novamente em alguns instantes"""
+                
+                inline_keyboard = [
+                    [
+                        {'text': '🔄 Tentar Novamente', 'callback_data': f'confirmar_envio_{cliente_id}_{template_id}'},
+                        {'text': '✏️ Editar Template', 'callback_data': f'template_editar_{template_id}'}
+                    ],
+                    [{'text': '👤 Ver Cliente', 'callback_data': f'cliente_detalhes_{cliente_id}'}]
+                ]
+            
+            self.send_message(chat_id, resposta,
+                            parse_mode='Markdown',
+                            reply_markup={'inline_keyboard': inline_keyboard})
+                                
+        except Exception as e:
+            logger.error(f"[RAILWAY] Erro crítico ao confirmar envio: {e}")
+            self.send_message(chat_id, f"❌ Erro crítico ao enviar mensagem: {str(e)}")
+    
+    def buscar_cliente_por_id(self, cliente_id):
+        """Busca cliente por ID com fallback para Railway"""
+        try:
+            if self.db and hasattr(self.db, 'buscar_cliente_por_id'):
+                return self.db.buscar_cliente_por_id(cliente_id)
+            elif self.db and hasattr(self.db, 'get_client_by_id'):
+                return self.db.get_client_by_id(cliente_id)
+            else:
+                logger.error("[RAILWAY] Método buscar_cliente_por_id não encontrado")
+                return None
+        except Exception as e:
+            logger.error(f"[RAILWAY] Erro ao buscar cliente: {e}")
+            return None
+    
+    def buscar_template_por_id(self, template_id):
+        """Busca template por ID com fallback para Railway"""
+        try:
+            if self.template_manager and hasattr(self.template_manager, 'buscar_template_por_id'):
+                return self.template_manager.buscar_template_por_id(template_id)
+            elif self.template_manager and hasattr(self.template_manager, 'get_template_by_id'):
+                return self.template_manager.get_template_by_id(template_id)
+            else:
+                logger.error("[RAILWAY] Método buscar_template_por_id não encontrado")
+                return None
+        except Exception as e:
+            logger.error(f"[RAILWAY] Erro ao buscar template: {e}")
+            return None
+    
+    def processar_template(self, conteudo, cliente):
+        """Processa template com dados do cliente com fallback para Railway"""
+        try:
+            if self.template_manager and hasattr(self.template_manager, 'processar_template'):
+                return self.template_manager.processar_template(conteudo, cliente)
+            else:
+                # Fallback manual para Railway
+                mensagem = conteudo.replace('{nome}', cliente.get('nome', ''))
+                mensagem = mensagem.replace('{telefone}', cliente.get('telefone', ''))
+                mensagem = mensagem.replace('{pacote}', cliente.get('pacote', ''))
+                mensagem = mensagem.replace('{valor}', str(cliente.get('valor', '')))
+                mensagem = mensagem.replace('{servidor}', cliente.get('servidor', ''))
+                if 'vencimento' in cliente:
+                    venc_str = cliente['vencimento'].strftime('%d/%m/%Y') if hasattr(cliente['vencimento'], 'strftime') else str(cliente['vencimento'])
+                    mensagem = mensagem.replace('{vencimento}', venc_str)
+                return mensagem
+        except Exception as e:
+            logger.error(f"[RAILWAY] Erro ao processar template: {e}")
+            return conteudo
+    
+    def registrar_envio(self, cliente_id, template_id, telefone, mensagem, tipo_envio, sucesso, message_id=None, erro=None):
+        """Registra envio no log com fallback para Railway"""
+        try:
+            if self.db and hasattr(self.db, 'registrar_envio'):
+                self.db.registrar_envio(cliente_id, template_id, telefone, mensagem, tipo_envio, sucesso, message_id, erro)
+            elif self.db and hasattr(self.db, 'log_message'):
+                self.db.log_message(cliente_id, template_id, telefone, mensagem, sucesso, erro)
+            else:
+                logger.info(f"[RAILWAY] Log de envio (método não encontrado): cliente={cliente_id}, sucesso={sucesso}")
+        except Exception as e:
+            logger.error(f"[RAILWAY] Erro ao registrar envio: {e}")
+    
+    def incrementar_uso_template(self, template_id):
+        """Incrementa contador de uso do template com fallback para Railway"""
+        try:
+            if self.template_manager and hasattr(self.template_manager, 'incrementar_uso_template'):
+                self.template_manager.incrementar_uso_template(template_id)
+            elif self.template_manager and hasattr(self.template_manager, 'increment_usage'):
+                self.template_manager.increment_usage(template_id)
+            else:
+                logger.info(f"[RAILWAY] Contador de uso incrementado (método não encontrado): template={template_id}")
+        except Exception as e:
+            logger.error(f"[RAILWAY] Erro ao incrementar uso: {e}")
 
 # Instância global do bot
 telegram_bot = None
@@ -5084,6 +5351,6 @@ if __name__ == '__main__':
     else:
         logger.warning("⚠️ Bot não inicializado completamente, mas servidor Flask será executado")
     
-   # ⚠️ A execução do bot e do servidor Flask é feita em start_railway.py
+# ⚠️ A execução do bot e do servidor Flask é feita em start_railway.py
 # Este arquivo só deve definir classes e funções.
 # Não inicie nada diretamente aqui!
