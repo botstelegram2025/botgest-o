@@ -11,10 +11,22 @@ import subprocess
 import threading
 import signal
 import logging
+from flask import Flask
+from multiprocessing import Process
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Instância Flask simples para o healthcheck
+health_app = Flask(__name__)
+
+@health_app.route("/health")
+def health():
+    return "ok", 200
+
+def run_health_server():
+    health_app.run(host="0.0.0.0", port=5001)
 
 class RailwayStarter:
     def __init__(self):
@@ -28,12 +40,10 @@ class RailwayStarter:
             logger.info("🚀 Iniciando Baileys API...")
             os.chdir('/app/baileys-server')
             
-            # Verificar se package.json existe
             if not os.path.exists('package.json'):
                 logger.error("❌ package.json não encontrado em baileys-server")
                 return False
                 
-            # Iniciar servidor Node.js
             self.baileys_process = subprocess.Popen(
                 ['node', 'server.js'],
                 stdout=subprocess.PIPE,
@@ -54,16 +64,13 @@ class RailwayStarter:
             logger.info("🤖 Iniciando Bot Python...")
             os.chdir('/app')
             
-            # Verificar se arquivo principal existe
             if not os.path.exists('bot_complete.py'):
                 logger.error("❌ bot_complete.py não encontrado")
                 return False
             
-            # Configurar variáveis de ambiente para Railway
             os.environ['PYTHONPATH'] = '/app'
             os.environ['RAILWAY_ENVIRONMENT'] = 'production'
             
-            # Iniciar bot
             self.bot_process = subprocess.Popen(
                 [sys.executable, 'bot_complete.py'],
                 stdout=subprocess.PIPE,
@@ -82,24 +89,21 @@ class RailwayStarter:
         """Monitora os processos e reinicia se necessário"""
         while self.running:
             try:
-                # Verificar Baileys API
                 if self.baileys_process and self.baileys_process.poll() is not None:
                     logger.warning("⚠️ Baileys API parou. Reiniciando...")
                     self.start_baileys_api()
                 
-                # Verificar Bot
                 if self.bot_process and self.bot_process.poll() is not None:
                     logger.warning("⚠️ Bot parou. Reiniciando...")
                     self.start_bot()
                 
-                time.sleep(30)  # Verificar a cada 30 segundos
+                time.sleep(30)
                 
             except Exception as e:
                 logger.error("❌ Erro no monitoramento: %s", e)
                 time.sleep(10)
     
     def handle_signal(self, signum, frame):
-        """Manipula sinais de parada"""
         logger.info("🛑 Recebido sinal %d. Parando serviços...", signum)
         self.running = False
         
@@ -112,37 +116,34 @@ class RailwayStarter:
         sys.exit(0)
     
     def start(self):
-        """Inicia todos os serviços"""
         logger.info("🚀 Iniciando sistema no Railway...")
-        
-        # Configurar handlers de sinal
+
         signal.signal(signal.SIGTERM, self.handle_signal)
         signal.signal(signal.SIGINT, self.handle_signal)
         
-        # Aguardar um pouco para Railway configurar ambiente
+        # Iniciar healthcheck server
+        health_server = Process(target=run_health_server)
+        health_server.daemon = True
+        health_server.start()
+
         time.sleep(5)
-        
-        # Iniciar Baileys API
+
         if not self.start_baileys_api():
             logger.error("❌ Falha ao iniciar Baileys API")
             return False
         
-        # Aguardar API inicializar
         time.sleep(10)
         
-        # Iniciar Bot
         if not self.start_bot():
             logger.error("❌ Falha ao iniciar Bot")
             return False
         
         logger.info("✅ Todos os serviços iniciados com sucesso!")
         
-        # Iniciar monitoramento em thread separada
         monitor_thread = threading.Thread(target=self.monitor_processes)
         monitor_thread.daemon = True
         monitor_thread.start()
         
-        # Manter processo principal ativo
         try:
             while self.running:
                 time.sleep(1)
@@ -152,7 +153,6 @@ class RailwayStarter:
         return True
 
 def main():
-    """Função principal"""
     try:
         starter = RailwayStarter()
         success = starter.start()
