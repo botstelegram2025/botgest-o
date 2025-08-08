@@ -29,4 +29,16 @@ COPY . .
 RUN mkdir -p /app/baileys-server/auth_info
 
 # Environment vars
-E
+ENV PYTHONPATH=/app
+ENV RAILWAY_ENVIRONMENT=production
+
+# Expose app ports
+EXPOSE 5001
+EXPOSE 3000
+
+# Healthcheck (adjust the endpoint if needed)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5001/health || exit 1
+
+# Start the Python app
+CMD ["python3", "start_railway.py"]
