@@ -1,47 +1,47 @@
-# Dockerfile.railway - Python + Node.js 20 + Git (Baileys-ready)
-
+# Dockerfile.railway - Force Docker build
 FROM python:3.11-slim
 
-# Instalar Git, curl e Node.js 20.x
+# Install Node.js and system dependencies
 RUN apt-get update && apt-get install -y \
+    nodejs \
+    npm \
     curl \
-    git \
-    gnupg \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
-    && node -v && npm -v \
     && rm -rf /var/lib/apt/lists/*
 
-# Diretório principal da aplicação
+# Set working directory
 WORKDIR /app
 
-# Instalar dependências Python primeiro (cache eficiente)
+# Copy requirements first for better caching
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar arquivos do serviço Node.js (baileys)
+# Copy baileys directory for Node.js dependencies
 COPY baileys-server/ ./baileys-server/
+
+# Install Node.js dependencies
 WORKDIR /app/baileys-server
 RUN npm install
 
-# Voltar à raiz do app e copiar o restante dos arquivos
+# Go back to main directory and copy remaining files
 WORKDIR /app
 COPY . .
 
-# Criar diretório de autenticação do baileys
+# Create auth directory
 RUN mkdir -p /app/baileys-server/auth_info
 
-# Variáveis de ambiente
+# Set environment variables
 ENV PYTHONPATH=/app
 ENV RAILWAY_ENVIRONMENT=production
 
-# Expor portas
+# Expose ports
 EXPOSE 5001
 EXPOSE 3000
 
-# Healthcheck opcional (ajuste o endpoint se necessário)
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5001/health || exit 1
 
-# Comando de inicialização do app Python
+# Start command
 CMD ["python3", "start_railway.py"]

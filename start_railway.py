@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Arquivo de inicialização para Railway
-Inicia tanto a API Baileys quanto o bot Python
+Arquivo de inicialização SIMPLIFICADO para Railway
+Evita conflito de portas Flask
 """
 
 import os
@@ -30,7 +30,7 @@ class RailwayStarter:
             
             # Verificar se package.json existe
             if not os.path.exists('package.json'):
-                logger.error("❌ package.json não encontrado em baileys-server")
+                logger.warning("⚠️ package.json não encontrado em baileys-server")
                 return False
                 
             # Iniciar servidor Node.js
@@ -45,11 +45,11 @@ class RailwayStarter:
             return True
             
         except Exception as e:
-            logger.error("❌ Erro ao iniciar Baileys API: %s", e)
+            logger.warning("⚠️ Erro ao iniciar Baileys API: %s", e)
             return False
     
     def start_bot(self):
-        """Inicia o bot Python"""
+        """Inicia o bot Python (que já inclui Flask com /health)"""
         try:
             logger.info("🤖 Iniciando Bot Python...")
             os.chdir('/app')
@@ -63,7 +63,7 @@ class RailwayStarter:
             os.environ['PYTHONPATH'] = '/app'
             os.environ['RAILWAY_ENVIRONMENT'] = 'production'
             
-            # Iniciar bot
+            # Iniciar bot (ele já tem Flask com endpoint /health)
             self.bot_process = subprocess.Popen(
                 [sys.executable, 'bot_complete.py'],
                 stdout=subprocess.PIPE,
@@ -87,9 +87,9 @@ class RailwayStarter:
                     logger.warning("⚠️ Baileys API parou. Reiniciando...")
                     self.start_baileys_api()
                 
-                # Verificar Bot
+                # Verificar Bot (CRÍTICO)
                 if self.bot_process and self.bot_process.poll() is not None:
-                    logger.warning("⚠️ Bot parou. Reiniciando...")
+                    logger.error("❌ Bot parou! Reiniciando...")
                     self.start_bot()
                 
                 time.sleep(30)  # Verificar a cada 30 segundos
@@ -119,25 +119,24 @@ class RailwayStarter:
         signal.signal(signal.SIGTERM, self.handle_signal)
         signal.signal(signal.SIGINT, self.handle_signal)
         
-        # Aguardar um pouco para Railway configurar ambiente
-        time.sleep(5)
+        # Aguardar Railway configurar ambiente
+        time.sleep(2)
         
-        # Iniciar Baileys API
+        # Iniciar Baileys API (opcional)
         if not self.start_baileys_api():
-            logger.error("❌ Falha ao iniciar Baileys API")
-            return False
+            logger.warning("⚠️ Baileys API não inicializou - continuando...")
         
-        # Aguardar API inicializar
-        time.sleep(10)
+        # Aguardar um pouco
+        time.sleep(3)
         
-        # Iniciar Bot
+        # Iniciar Bot (CRÍTICO - tem Flask com /health)
         if not self.start_bot():
-            logger.error("❌ Falha ao iniciar Bot")
+            logger.error("❌ FALHA CRÍTICA: Bot não iniciou")
             return False
         
-        logger.info("✅ Todos os serviços iniciados com sucesso!")
+        logger.info("✅ Sistema iniciado! Bot tem Flask com endpoint /health")
         
-        # Iniciar monitoramento em thread separada
+        # Iniciar monitoramento
         monitor_thread = threading.Thread(target=self.monitor_processes)
         monitor_thread.daemon = True
         monitor_thread.start()
@@ -158,7 +157,7 @@ def main():
         success = starter.start()
         
         if not success:
-            logger.error("❌ Falha ao iniciar sistema")
+            logger.error("❌ Falha crítica ao iniciar sistema")
             sys.exit(1)
             
     except Exception as e:
