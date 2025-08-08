@@ -1,44 +1,47 @@
-# Dockerfile.railway - Python + Node.js 20.x for Baileys
+# Dockerfile.railway - Python + Node.js 20 + Git (para Baileys)
 
 FROM python:3.11-slim
 
-# Install Node.js 20.x and dependencies
-RUN apt-get update && apt-get install -y curl gnupg && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    node -v && npm -v && \
-    rm -rf /var/lib/apt/lists/*
+# Instalar Git, curl e Node.js 20.x
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && node -v && npm -v \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Diretório principal da aplicação
 WORKDIR /app
 
-# Copy and install Python requirements
+# Instalar dependências Python primeiro (cache eficiente)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy Node.js service and install deps
+# Copiar arquivos do serviço Node.js (baileys)
 COPY baileys-server/ ./baileys-server/
 WORKDIR /app/baileys-server
 RUN npm install
 
-# Go back to Python project and copy remaining files
+# Voltar à raiz do app e copiar o restante dos arquivos
 WORKDIR /app
 COPY . .
 
-# Create directory for Baileys auth
+# Criar diretório de autenticação do baileys
 RUN mkdir -p /app/baileys-server/auth_info
 
-# Environment vars
+# Variáveis de ambiente
 ENV PYTHONPATH=/app
 ENV RAILWAY_ENVIRONMENT=production
 
-# Expose app ports
-EXPOSE 5001
-EXPOSE 3000
+# Expor portas
+EXPOSE 5001    # Python API
+EXPOSE 3000    # Baileys API (se usada via HTTP)
 
-# Healthcheck (adjust the endpoint if needed)
+# Healthcheck opcional (ajuste se necessário)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5001/health || exit 1
 
-# Start the Python app
+# Comando inicial - executa o app Python
 CMD ["python3", "start_railway.py"]
