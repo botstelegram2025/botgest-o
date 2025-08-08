@@ -226,6 +226,7 @@ class TelegramBot:
             
             # Verificar se é admin
             if not self.is_admin(chat_id):
+                logger.warning(f"Acesso negado para chat_id: {chat_id}, ADMIN_CHAT_ID: {ADMIN_CHAT_ID}")
                 self.send_message(chat_id, "❌ Acesso negado. Apenas o admin pode usar este bot.")
                 return
             
@@ -4617,6 +4618,10 @@ def initialize_bot():
         logger.error("BOT_TOKEN não configurado")
         return False
     
+    logger.info(f"Configurações do bot:")
+    logger.info(f"- BOT_TOKEN: {'✅ Configurado' if BOT_TOKEN else '❌ Não configurado'}")
+    logger.info(f"- ADMIN_CHAT_ID: {ADMIN_CHAT_ID if ADMIN_CHAT_ID else '❌ Não configurado'}")
+    
     try:
         telegram_bot = TelegramBot(BOT_TOKEN)
         bot_instance = telegram_bot  # Definir bot_instance para compatibilidade
@@ -4995,7 +5000,20 @@ def iniciar_mensagem_personalizada_global(chat_id, cliente_id):
             logger.error(f"Erro ao iniciar mensagem personalizada: {e}")
             telegram_bot.send_message(chat_id, "❌ Erro ao inicializar mensagem personalizada.")
 
+if __name__ == '__main__':
+    # Inicializar bot
+    logger.info("Iniciando bot completo...")
+    
+    if initialize_bot():
+        logger.info("✅ Bot completo inicializado com sucesso")
+        # Processar mensagens pendentes após inicialização
+        logger.info("Processando mensagens pendentes...")
+        process_pending_messages()
+        # Iniciar polling contínuo
+        start_polling_thread()
+    else:
+        logger.warning("⚠️ Bot não inicializado completamente, mas servidor Flask será executado")
+    
 # ⚠️ A execução do bot e do servidor Flask é feita em start_railway.py
 # Este arquivo só deve definir classes e funções.
 # Não inicie nada diretamente aqui!
-
