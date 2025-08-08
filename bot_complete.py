@@ -4995,27 +4995,7 @@ def iniciar_mensagem_personalizada_global(chat_id, cliente_id):
             logger.error(f"Erro ao iniciar mensagem personalizada: {e}")
             telegram_bot.send_message(chat_id, "❌ Erro ao inicializar mensagem personalizada.")
 
-if __name__ == '__main__':
-    # Inicializar bot
-    logger.info("Iniciando bot completo...")
-    
-    if initialize_bot():
-        logger.info("✅ Bot completo inicializado com sucesso")
-        # Processar mensagens pendentes após inicialização
-        logger.info("Processando mensagens pendentes...")
-        process_pending_messages()
-        # Iniciar polling contínuo
-        start_polling_thread()
-    else:
-        logger.warning("⚠️ Bot não inicializado completamente, mas servidor Flask será executado")
-    
-   # Iniciar servidor Flask
-port = int(os.getenv('PORT', 5001))
-logger.info(f"🌐 Iniciando servidor Flask na porta {port}")
-app.run(
-    host='0.0.0.0',
-    port=port,
-    debug=False,
-    use_reloader=False,  # Evita reinicializações duplas
-    threaded=True         # Permite múltiplas conexões simultâneas
-)
+# ⚠️ A execução do bot e do servidor Flask é feita em start_railway.py
+# Este arquivo só deve definir classes e funções.
+# Não inicie nada diretamente aqui!
+
