@@ -1,12 +1,20 @@
-# Dockerfile otimizado para Railway
+# Dockerfile otimizado para Railway com Node.js 20
 FROM python:3.11-slim
 
-# Instalar Node.js e dependências do sistema
+# Instalar Node.js 20 e dependências do sistema
 RUN apt-get update && apt-get install -y \
-    nodejs \
-    npm \
     curl \
+    ca-certificates \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Instalar Node.js 20 via NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verificar versões instaladas
+RUN node --version && npm --version
 
 # Definir diretório de trabalho
 WORKDIR /app
