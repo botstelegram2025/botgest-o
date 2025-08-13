@@ -2,6 +2,14 @@
 
 ## 🆕 **Novidades Implementadas (13/08/2025)**
 
+### 🎯 **ATUALIZAÇÃO FINAL: Interface de Botões**
+
+**Melhoria Aplicada:**
+- ✅ **Botões de Cliente**: Agora mostram **nome + data de vencimento** ao invés de nome + ID
+- ✅ **Aplicado em**: Lista de clientes, busca de clientes, e lista de vencimentos
+- ✅ **Formato**: "🟢 João Silva (15/08/2025)" 
+- ✅ **Benefício**: Informação mais útil e prática para o usuário
+
 ### 🔧 **CORREÇÃO CRÍTICA: Reprocessamento Automático de Vencidos**
 
 **Problema Resolvido:**
