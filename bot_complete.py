@@ -191,8 +191,8 @@ class TelegramBot:
         """Cria teclado para seleção de planos"""
         return {
             'keyboard': [
-                [{'text': 'MENSAL'}, {'text': 'BIMESTRAL'}, {'text': 'TRIIMESTRAL'}],
-                [{'text': 'SEMESTRAL'}, {'text': 'ANUAL'}],
+                [{'text': 'PLANO30'}, {'text': 'PLANO60'}, {'text': 'PLANO90'}],
+                [{'text': 'PLANO180'}, {'text': 'PLANO360'}],
                 [{'text': '🔧 Outro plano'}, {'text': '❌ Cancelar'}]
             ],
             'resize_keyboard': True
