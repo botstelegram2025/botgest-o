@@ -27,3 +27,11 @@ RUN chmod +x start.sh
 
 # Run the application using the smart start script
 CMD ["./start.sh"]
+# Expose port
+EXPOSE 5000
+
+# Make start.sh executable
+RUN chmod +x start.sh
+
+# Run the application using the smart start script
+CMD ["./start.sh"]
