@@ -227,7 +227,13 @@ class MessageScheduler:
             logger.info("=== ENVIO DIÁRIO ÀS 9H DA MANHÃ ===")
             logger.info("Processando e enviando mensagens...")
             
-            # Buscar clientes ativos
+            hoje = agora_br().date()
+            amanha = hoje + timedelta(days=1)
+            
+            # 1. VERIFICAR USUÁRIOS DO SISTEMA (teste/renovação)
+            self._verificar_usuarios_sistema(amanha)
+            
+            # 2. PROCESSAR CLIENTES (mensagens WhatsApp)
             clientes = self.db.listar_clientes(apenas_ativos=True)
             
             if not clientes:
@@ -235,7 +241,6 @@ class MessageScheduler:
                 return
             
             enviadas = 0
-            hoje = agora_br().date()
             
             for cliente in clientes:
                 try:
@@ -349,6 +354,11 @@ class MessageScheduler:
     def _enviar_mensagem_cliente(self, cliente, tipo_template):
         """Envia mensagem imediatamente para o cliente"""
         try:
+            # Verificar preferências de notificação PRIMEIRO
+            if not self._cliente_pode_receber_mensagem(cliente, tipo_template):
+                logger.info(f"Cliente {cliente['nome']} optou por não receber mensagens do tipo {tipo_template}")
+                return False
+            
             # Buscar template correspondente
             template = self.db.obter_template_por_tipo(tipo_template)
             if not template:
@@ -385,6 +395,204 @@ class MessageScheduler:
         except Exception as e:
             logger.error(f"Erro ao enviar mensagem para cliente: {e}")
             return False
+    
+    def _cliente_pode_receber_mensagem(self, cliente, tipo_template):
+        """Verifica se o cliente pode receber mensagens baseado nas preferências de notificação"""
+        try:
+            cliente_id = cliente['id']
+            chat_id_usuario = cliente.get('chat_id_usuario')
+            
+            # Obter preferências do cliente
+            if hasattr(self.db, 'cliente_pode_receber_cobranca'):
+                # Verificar tipo de mensagem
+                if tipo_template in ['vencimento_1dia_apos', 'vencimento_hoje', 'vencimento_2dias']:
+                    # Mensagem de cobrança/vencimento
+                    pode_receber = self.db.cliente_pode_receber_cobranca(cliente_id, chat_id_usuario)
+                    logger.info(f"Cliente {cliente['nome']}: pode receber cobrança = {pode_receber}")
+                    return pode_receber
+                else:
+                    # Outras notificações (renovação, promoções, etc.)
+                    pode_receber = self.db.cliente_pode_receber_notificacoes(cliente_id, chat_id_usuario)
+                    logger.info(f"Cliente {cliente['nome']}: pode receber notificações = {pode_receber}")
+                    return pode_receber
+            else:
+                # Compatibilidade: se não tem o método, permitir envio
+                logger.warning("Métodos de verificação de preferências não disponíveis - permitindo envio")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Erro ao verificar preferências de notificação: {e}")
+            # Em caso de erro, permitir envio para manter funcionalidade
+            return True
+    
+    def _verificar_usuarios_sistema(self, data_vencimento):
+        """Verifica usuários do sistema que precisam de alerta de pagamento"""
+        try:
+            # 1. Usuários em teste que vencem amanhã
+            self._verificar_usuarios_teste_vencendo(data_vencimento)
+            
+            # 2. Usuários pagos que vencem amanhã
+            self._verificar_usuarios_pagos_vencendo(data_vencimento)
+            
+        except Exception as e:
+            logger.error(f"Erro ao verificar usuários do sistema: {e}")
+    
+    def _verificar_usuarios_teste_vencendo(self, data_vencimento):
+        """Verifica usuários em teste que vencem em data específica"""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT chat_id, nome, email, fim_periodo_teste
+                    FROM usuarios 
+                    WHERE status = 'teste_gratuito' 
+                    AND plano_ativo = true
+                    AND DATE(fim_periodo_teste) = %s
+                """, (data_vencimento,))
+                
+                usuarios_vencendo = cursor.fetchall()
+            
+            if usuarios_vencendo:
+                logger.info(f"Encontrados {len(usuarios_vencendo)} usuários em teste vencendo em {data_vencimento}")
+                
+                for usuario in usuarios_vencendo:
+                    try:
+                        self._enviar_alerta_teste_vencendo(dict(usuario))
+                    except Exception as e:
+                        logger.error(f"Erro ao enviar alerta para usuário {usuario.get('chat_id')}: {e}")
+            
+        except Exception as e:
+            logger.error(f"Erro ao verificar usuários em teste vencendo: {e}")
+    
+    def _verificar_usuarios_pagos_vencendo(self, data_vencimento):
+        """Verifica usuários pagos que vencem em data específica"""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT chat_id, nome, email, proximo_vencimento
+                    FROM usuarios 
+                    WHERE status = 'pago' 
+                    AND plano_ativo = true
+                    AND DATE(proximo_vencimento) = %s
+                """, (data_vencimento,))
+                
+                usuarios_vencendo = cursor.fetchall()
+            
+            if usuarios_vencendo:
+                logger.info(f"Encontrados {len(usuarios_vencendo)} usuários pagos vencendo em {data_vencimento}")
+                
+                for usuario in usuarios_vencendo:
+                    try:
+                        self._enviar_alerta_renovacao(dict(usuario))
+                    except Exception as e:
+                        logger.error(f"Erro ao enviar alerta de renovação para usuário {usuario.get('chat_id')}: {e}")
+            
+        except Exception as e:
+            logger.error(f"Erro ao verificar usuários pagos vencendo: {e}")
+    
+    def _enviar_alerta_teste_vencendo(self, usuario):
+        """Envia alerta para usuário que o teste gratuito vence amanhã"""
+        try:
+            chat_id = usuario.get('chat_id')
+            nome = usuario.get('nome', 'usuário')
+            fim_teste = usuario.get('fim_periodo_teste')
+            
+            if isinstance(fim_teste, datetime):
+                data_vencimento = fim_teste.strftime('%d/%m/%Y')
+            else:
+                data_vencimento = 'amanhã'
+            
+            mensagem = f"""⚠️ *TESTE GRATUITO VENCENDO!*
+
+Olá {nome}! 👋
+
+Seu período de teste gratuito vence *{data_vencimento}*.
+
+Para continuar usando o sistema sem interrupções, você precisa ativar um plano pago.
+
+💡 *Plano mensal:* R$ 20,00
+✅ *Acesso completo a todas as funcionalidades*
+📱 *Gestão de clientes pelo Telegram*
+📊 *Relatórios e análises*
+📞 *Suporte prioritário*
+
+Garanta já seu acesso! 👇"""
+
+            inline_keyboard = [
+                [
+                    {'text': '💳 Gerar PIX - R$ 20,00', 'callback_data': f'gerar_pix_usuario_{chat_id}'},
+                ],
+                [
+                    {'text': '📞 Falar com Suporte', 'url': 'https://t.me/seu_suporte'},
+                    {'text': '❓ Dúvidas', 'callback_data': 'info_planos'}
+                ]
+            ]
+            
+            if hasattr(self, 'bot') and self.bot:
+                self.bot.send_message(
+                    chat_id, 
+                    mensagem, 
+                    parse_mode='Markdown',
+                    reply_markup={'inline_keyboard': inline_keyboard}
+                )
+                logger.info(f"Alerta de teste vencendo enviado para {nome} (ID: {chat_id})")
+            
+        except Exception as e:
+            logger.error(f"Erro ao enviar alerta de teste vencendo: {e}")
+    
+    def _enviar_alerta_renovacao(self, usuario):
+        """Envia alerta para usuário que o plano vence amanhã"""
+        try:
+            chat_id = usuario.get('chat_id')
+            nome = usuario.get('nome', 'usuário')
+            vencimento = usuario.get('proximo_vencimento')
+            
+            if isinstance(vencimento, datetime):
+                data_vencimento = vencimento.strftime('%d/%m/%Y')
+            else:
+                data_vencimento = 'amanhã'
+            
+            mensagem = f"""🔄 *RENOVAÇÃO DE PLANO*
+
+Olá {nome}! 👋
+
+Seu plano mensal vence *{data_vencimento}*.
+
+Para manter o acesso ao sistema sem interrupções, renove seu plano agora!
+
+💡 *Renovação:* R$ 20,00 por mais 30 dias
+✅ *Sem perda de dados ou configurações*
+📱 *Continuidade total do serviço*
+🚀 *Sempre com as últimas atualizações*
+
+Renove agora e mantenha tudo funcionando! 👇"""
+
+            inline_keyboard = [
+                [
+                    {'text': '🔄 Renovar - Gerar PIX R$ 20,00', 'callback_data': f'gerar_pix_renovacao_{chat_id}'},
+                ],
+                [
+                    {'text': '📞 Falar com Suporte', 'url': 'https://t.me/seu_suporte'},
+                    {'text': '📋 Minha Conta', 'callback_data': 'minha_conta'}
+                ]
+            ]
+            
+            if hasattr(self, 'bot') and self.bot:
+                self.bot.send_message(
+                    chat_id, 
+                    mensagem, 
+                    parse_mode='Markdown',
+                    reply_markup={'inline_keyboard': inline_keyboard}
+                )
+                logger.info(f"Alerta de renovação enviado para {nome} (ID: {chat_id})")
+            
+        except Exception as e:
+            logger.error(f"Erro ao enviar alerta de renovação: {e}")
+    
+    def set_bot_instance(self, bot_instance):
+        """Define a instância do bot para envio de mensagens"""
+        self.bot = bot_instance
     
     def _ja_enviada_hoje(self, cliente_id, template_id):
         """Verifica se a mensagem já foi enviada hoje para evitar duplicatas"""
