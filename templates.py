@@ -33,62 +33,64 @@ class TemplateManager:
             'empresa_telefone': 'Telefone da empresa',
             'empresa_email': 'Email da empresa',
             'suporte_telefone': 'Telefone de suporte',
+            'suporte_email': 'Email de suporte',
             'pix_chave': 'Chave PIX para pagamento',
             'pix_beneficiario': 'Nome do beneficiário PIX'
         }
     
-    def listar_templates(self, apenas_ativos=True):
-        """Lista todos os templates disponíveis"""
+    def listar_templates(self, apenas_ativos=True, chat_id_usuario=None):
+        """Lista templates com isolamento por usuário"""
         try:
-            return self.db.listar_templates(apenas_ativos)
+            return self.db.listar_templates(apenas_ativos, chat_id_usuario)
         except Exception as e:
             logger.error(f"Erro ao listar templates: {e}")
             return []
     
-    def obter_template(self, template_id):
-        """Obtém template por ID"""
+    def obter_template(self, template_id, chat_id_usuario=None):
+        """Obtém template por ID com isolamento por usuário"""
         try:
-            return self.db.obter_template(template_id)
+            return self.db.obter_template(template_id, chat_id_usuario)
         except Exception as e:
             logger.error(f"Erro ao obter template {template_id}: {e}")
             return None
     
-    def buscar_template_por_id(self, template_id):
-        """Busca template por ID (alias para compatibilidade)"""
+    def buscar_template_por_id(self, template_id, chat_id_usuario=None):
+        """Busca template por ID com isolamento por usuário"""
         try:
-            return self.db.obter_template(template_id)
+            return self.db.obter_template(template_id, chat_id_usuario)
         except Exception as e:
             logger.error(f"Erro ao buscar template {template_id}: {e}")
             return None
     
-    def buscar_template(self, template_id):
-        """Busca template por ID (alias adicional para compatibilidade)"""
+    def buscar_template(self, template_id, chat_id_usuario=None):
+        """Busca template por ID com isolamento por usuário"""
         try:
-            return self.db.obter_template(template_id)
+            return self.db.obter_template(template_id, chat_id_usuario)
         except Exception as e:
             logger.error(f"Erro ao buscar template {template_id}: {e}")
             return None
     
-    def excluir_template(self, template_id):
-        """Exclui template definitivamente"""
+    def excluir_template(self, template_id, chat_id_usuario=None):
+        """Exclui template definitivamente com isolamento por usuário"""
         try:
-            return self.db.excluir_template(template_id)
+            self.db.excluir_template(template_id, chat_id_usuario)
+            return True
         except Exception as e:
             logger.error(f"Erro ao excluir template {template_id}: {e}")
             return False
     
-    def atualizar_campo(self, template_id, campo, valor):
-        """Atualiza campo específico do template"""
+    def atualizar_campo(self, template_id, campo, valor, chat_id_usuario=None):
+        """Atualiza campo específico do template com isolamento por usuário"""
         try:
-            return self.db.atualizar_template_campo(template_id, campo, valor)
+            return self.db.atualizar_template_campo(template_id, campo, valor, chat_id_usuario)
         except Exception as e:
             logger.error(f"Erro ao atualizar campo {campo} do template {template_id}: {e}")
             return False
     
-    def obter_template_por_tipo(self, tipo):
-        """Obtém template por tipo"""
+    def obter_template_por_tipo(self, tipo, chat_id_usuario=None):
+        """Obtém template por tipo com isolamento por usuário"""
         try:
-            return self.db.obter_template_por_tipo(tipo)
+            return self.db.obter_template_por_tipo(tipo, chat_id_usuario)
         except Exception as e:
             logger.error(f"Erro ao obter template por tipo {tipo}: {e}")
             return None
@@ -109,8 +111,8 @@ class TemplateManager:
             logger.error(f"Erro ao criar template: {e}")
             raise
     
-    def atualizar_template(self, template_id, nome=None, descricao=None, conteudo=None):
-        """Atualiza template existente"""
+    def atualizar_template(self, template_id, nome=None, descricao=None, conteudo=None, chat_id_usuario=None):
+        """Atualiza template existente com isolamento por usuário"""
         try:
             # Validar conteúdo se fornecido
             if conteudo:
@@ -118,9 +120,9 @@ class TemplateManager:
                 if erros_validacao:
                     raise ValueError(f"Erros no template: {', '.join(erros_validacao)}")
             
-            sucesso = self.db.atualizar_template(template_id, nome, descricao, conteudo)
+            sucesso = self.db.atualizar_template(template_id, nome, descricao, conteudo, chat_id_usuario)
             if sucesso:
-                logger.info(f"Template {template_id} atualizado com sucesso")
+                logger.info(f"Template {template_id} atualizado com sucesso para usuário {chat_id_usuario}")
             return sucesso
             
         except Exception as e:
@@ -222,6 +224,7 @@ class TemplateManager:
         dados['empresa_telefone'] = configuracoes.get('empresa_telefone', '[CONFIGURAR TELEFONE]')
         dados['empresa_email'] = configuracoes.get('empresa_email', '[CONFIGURAR EMAIL]')
         dados['suporte_telefone'] = configuracoes.get('suporte_telefone', '[CONFIGURAR SUPORTE]')
+        dados['suporte_email'] = configuracoes.get('suporte_email', '[CONFIGURAR EMAIL SUPORTE]')
         dados['pix_chave'] = configuracoes.get('pix_chave', '[CONFIGURAR CHAVE PIX]')
         dados['pix_beneficiario'] = configuracoes.get('pix_beneficiario', '[CONFIGURAR BENEFICIÁRIO]')
         
@@ -237,6 +240,7 @@ class TemplateManager:
             config['empresa_telefone'] = self.db.obter_configuracao('empresa_telefone', '[CONFIGURAR TELEFONE]')
             config['empresa_email'] = self.db.obter_configuracao('empresa_email', '[CONFIGURAR EMAIL]')
             config['suporte_telefone'] = self.db.obter_configuracao('suporte_telefone', '[CONFIGURAR SUPORTE]')
+            config['suporte_email'] = self.db.obter_configuracao('suporte_email', '[CONFIGURAR EMAIL SUPORTE]')
             config['pix_chave'] = self.db.obter_configuracao('pix_chave', '[CONFIGURAR PIX]')
             config['pix_beneficiario'] = self.db.obter_configuracao('pix_beneficiario', '[CONFIGURAR BENEFICIÁRIO]')
             

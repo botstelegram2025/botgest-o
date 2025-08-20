@@ -12,52 +12,23 @@ Search interface: Client search results should use the same format as client lis
 Button display format: Client buttons throughout the system display "name + expiration date" format instead of "name + ID" for better usability.
 Phone number format: All phone numbers are automatically standardized to Baileys WhatsApp format (DDD12345678 - 10 digits total) regardless of input format. Modern 9-digit numbers have the first 9 removed for Baileys compatibility.
 Renewal behavior: When renewing clients, system now asks if user wants to send renewal message. Date calculation fixed to maintain same day of next month (e.g., Aug 15 -> Sep 15) instead of adding exactly 30 days.
-
-## Recent Changes (2025-08-17)
-- **CORREÇÕES CRÍTICAS DE ISOLAMENTO WHATSAPP**: Implementado isolamento real de sessões WhatsApp por usuário - cada usuário agora tem sua própria conexão isolada impedindo envio de mensagens com WhatsApp de outros usuários
-- **QR CODE WHATSAPP CORRIGIDO**: Resolvido problema "Endpoint não encontrado" ao gerar QR Code - sistema totalmente funcional novamente
-- **BANCO DE DADOS MULTI-TENANT ATUALIZADO**: Adicionadas colunas `chat_id_usuario` e `numero_whatsapp` na tabela `whatsapp_sessions` com constraints únicas por usuário
-- **API BAILEYS ISOLADA**: Todas as funções principais (send_message, generate_qr_code, get_status) agora incluem isolamento por `chat_id_usuario`
-- **WHATSAPP SESSION API SEGURA**: Funções backup_session e restore_session agora filtram por usuário específico garantindo zero vazamento de dados
-- **BOT TELEGRAM CORRIGIDO**: Todas as chamadas para WhatsApp agora incluem parâmetro de isolamento por usuário
-- **SISTEMA 100% SEGURO**: Impossível enviar mensagem com WhatsApp de outro usuário - privacidade e LGPD garantidas
-- **PACOTE DE CORREÇÕES CRIADO**: ZIP completo (correções_isolamento_whatsapp_completo_17082025.zip) com todas as correções críticas
-- **RENOVAÇÃO DE CLIENTES APRIMORADA**: Corrigido cálculo de data de renovação para manter o mesmo dia do próximo mês (ex: 15/08 -> 15/09) em vez de somar exatamente 30 dias
-- **PERGUNTA DE MENSAGEM DE RENOVAÇÃO**: Adicionada funcionalidade para perguntar se deseja enviar mensagem de renovação após renovar cliente
-- **CÁLCULO DE VENCIMENTO CORRIGIDO**: Cadastro de novos clientes agora usa cálculo correto de meses em vez de multiplicar por 30 dias
-- **VIOLAÇÃO DE EXCLUSÃO CORRIGIDA**: Função `excluir_cliente` agora verifica ownership do usuário antes de permitir exclusão, impedindo que usuários excluam clientes de outros
-- **VIOLAÇÃO DE LISTAGEM CORRIGIDA**: Função `listar_clientes_vencendo` agora filtra por `chat_id_usuario`, impedindo vazamento de dados entre usuários
-- **ASSINATURA DE FUNÇÕES ATUALIZADA**: Todas as funções críticas agora incluem parâmetro `chat_id_usuario` obrigatório para isolamento
-- **CACHE SEGURO**: Sistema de cache invalidado corretamente após operações críticas para evitar dados obsoletos
-- **VERSÃO MONOLÍTICA CRIADA**: Desenvolvida versão completa em arquivo único (bot_monolitico.py) com ~1000 linhas consolidando todos os módulos para facilitar deploy e portabilidade
-- **ARQUIVO ÚNICO FUNCIONAL**: Todo o sistema (Bot Telegram, PostgreSQL, Mercado Pago, WhatsApp, Templates, Automação) em um só arquivo Python
-- **MENU CONFIGURAÇÕES TECLADO PERSISTENTE**: Convertido menu de configurações de inline buttons para teclado persistente conforme solicitado pelo usuário
-- **DOCUMENTAÇÃO COMPLETA MONOLÍTICA**: Criados README, requirements e guias específicos para versão consolidada
-- **BACKUP PROJETO COMPLETO**: Gerados arquivos ZIP (115MB completo, 2.9MB essencial) e documentação detalhada da estrutura
-
-## Previous Changes (2025-08-16)
-- **COMPREHENSIVE USER GUIDE IMPLEMENTED**: Complete interactive guide with 9 organized sections (setup, WhatsApp connection, client management, templates, messaging, automation, reports, troubleshooting, tips) accessible via settings menu
-- **ADVANCED TEMPLATE CREATION SYSTEM**: Enhanced template creation with specific types (Welcome, 2 days before expiry, 1 day before expiry, expiry day, 1 day after expired) and ready-to-copy template models for each scenario
-- **TEMPLATE MODEL LIBRARY**: Implemented comprehensive template models with proper formatting, variables, and professional messaging for all business scenarios including billing, renewals, and customer communications
-- **INTERACTIVE TEMPLATE WORKFLOW**: 5-step template creation process with type selection, model preview, editing options, and confirmation before final creation
-- **TEMPLATE TYPE CATEGORIZATION**: Organized templates by business use case for improved efficiency and professional communication standards
-
-## Previous Changes (2025-08-15)
-- **CRITICAL DATABASE FIX**: Fixed PostgreSQL transaction abort errors by implementing autocommit=True connections
-- **MULTI-TENANT CONFIGURATION FIXED**: Corrected salvar_configuracao() function to include chat_id_usuario parameter for proper user isolation
-- **ADMINISTRATIVE CALLBACK HANDLERS FIXED**: Added missing callback handlers for admin buttons (Atualizar Lista, Cadastrar Novo, Buscar Usuário, Estatísticas, Vencendo, Pendências)
-- **USER DATA ISOLATION WORKING**: Users can now save company data (PIX, phone, company name, titular) with complete isolation per user
-- **AUTOMATIC BILLING ALERTS IMPLEMENTED**: System sends automatic Telegram alerts 1 day before trial expiration and monthly renewal with instant PIX generation buttons
-- **PHONE NUMBER STANDARDIZATION ADDED**: All phone numbers are automatically converted to WhatsApp format (DDD12345678) accepting any input format for consistent messaging
-- **SYSTEM STABILITY ACHIEVED**: All core bot functionality operational with proper error handling and graceful degradation
+Cache behavior: Client list updates immediately after any edit operation. System automatically invalidates cache when client data is modified to ensure real-time data display.
+Template protection: System templates (chat_id_usuario = NULL) cannot be edited by users. Only custom user templates can be modified.
+User validation: Automatic messages only sent when valid chat_id_usuario is present, preventing orphaned messages.
+QR code persistence: WhatsApp sessions automatically saved to PostgreSQL and restored on Railway deploys, eliminating need to re-scan QR codes after updates.
+Daily alerts isolation: Daily verification alerts and automatic message processing now fully isolated by user - each user receives only their own client data and alerts.
+Hybrid scheduling system: System uses global schedules for efficiency but detects and logs individual user preferences. Data processing completely isolated by user while maintaining centralized timing for optimal resource usage.
+TEMPLATE SELECTION FILTER FIX: Enhanced template filtering for message sending to show only user-created templates. Fixed enviar_mensagem_cliente function to filter out system default templates when users click "Send Message", ensuring complete security and improved UX. Updated all renewal functions to only search for user-created renewal templates. System now guarantees users see only their own personalized templates during message selection, hiding system defaults for security.
+PERSONALIZED SCHEDULING SYSTEM FIXED: Critical bug in personalized scheduling system completely resolved (19/08/2025). Fixed conversation state handling that was causing bot to become unresponsive when users attempted to change notification times. Implemented proper database isolation for user-specific schedule configurations with direct SQL operations bypassing problematic ORM constraints. Enhanced schedule_config.py with robust error handling and immediate state cleanup. Users can now safely customize notification times (e.g., 16:52) without system freezing. All schedule modification functions properly isolated by chat_id_usuario ensuring multi-tenant security.
+SEQUENTIAL SCHEDULING ENHANCEMENT: Added advanced sequential scheduling capabilities allowing users to configure separate verification and sending times (19/08/2025). Users can now set verification at 18:00 to detect expired clients and automatic sending at 18:10 for optimal business hour notifications. Enhanced schedule_config.py with sequential timing recommendations and improved UI for better user experience in scheduling configuration.
 
 ## System Architecture
 
 ### Core Components
 -   **Bot Framework**: Utilizes `python-telegram-bot` for an administrative interface via Telegram, supporting conversational states for CRUD operations.
--   **WhatsApp Integration**: Integrates with the Baileys API for automated WhatsApp message sending, including retry mechanisms, status caching, and rate limiting. Features QR code generation for connection, real-time status monitoring, comprehensive logging, and persistent session storage in PostgreSQL for seamless reconnection.
--   **Database Layer**: PostgreSQL serves as the primary database, managing tables for clients, templates, send logs, message queues, and WhatsApp session persistence. Uses `psycopg2` with `RealDictCursor` for optimal performance. Includes comprehensive multi-tenant isolation with `chat_id_usuario` columns and foreign key relationships across relevant tables.
--   **Advanced Template System**: A comprehensive template system supports dynamic variables (e.g., `{nome}`, `{vencimento}`) with interactive management, usage statistics, and pre-built template models for different business scenarios (welcome messages, billing reminders, expiry notifications). Includes 5-step creation workflow with type selection and ready-to-copy professional templates.
+-   **WhatsApp Integration**: Integrates with the Baileys API for automated WhatsApp message sending, including retry mechanisms, status caching, and rate limiting. Features QR code generation for connection, real-time status monitoring, comprehensive logging, and persistent session storage in PostgreSQL for seamless reconnection. Supports unlimited simultaneous user sessions with isolated `user_{chat_id}` sessions and dedicated authentication folders.
+-   **Database Layer**: PostgreSQL serves as the primary database, managing tables for clients, templates, send logs, message queues, and WhatsApp session persistence. Uses `psycopg2` with `RealDictCursor`. Includes comprehensive multi-tenant isolation with `chat_id_usuario` columns and foreign key relationships.
+-   **Advanced Template System**: A comprehensive template system supports dynamic variables (e.g., `{nome}`, `{vencimento}`) with interactive management, usage statistics, and pre-built template models for different business scenarios (welcome messages, billing reminders, expiry notifications). Includes a 5-step creation workflow with type selection and ready-to-copy professional templates. Template variables (empresa_nome, empresa_telefone, empresa_email, pix_chave, pix_beneficiario, suporte_telefone, suporte_email) are fully functional with substitution, multi-tenant isolation, and fallback values.
 -   **Scheduler System**: `APScheduler` is used for scheduling recurring tasks like daily expiration checks and message queue processing, configured for consistent timezone (America/Sao_Paulo) and thread-safe operations. Features daily verification to add only same-day messages to queue and automatic message cancellation when clients are renewed.
 -   **Configuration Management**: A centralized system manages configurations via environment variables, with typed classes and automatic validation, providing an interactive interface for global settings.
 -   **Error Handling**: Implements structured logging and specific error handling for external API network issues with exponential retry.
@@ -69,7 +40,7 @@ Renewal behavior: When renewing clients, system now asks if user wants to send r
 -   **Configuration System**: An interactive interface for managing global configurations such as company data, PIX settings, and WhatsApp API status. Direct shortcuts for "Agendador" and "Templates" in settings for improved UX.
 -   **Message Sending**: Supports both manual and automated message sending, with message preview and automatic variable substitution, and a user-controlled renewal message flow. Messages are only added to queue on their intended send date. Individual client notification preferences control automated message delivery.
 -   **Reporting System**: Offers comprehensive period-based reports (7 days, 30 days, 3 months, 6 months) including financial analysis, client statistics, performance metrics, and monthly comparisons. Includes financial summary on client listing showing expected, received, and overdue amounts. All reports properly initialize with zero values for new users.
--   **Multi-User System**: Supports user registration with a free trial, monthly subscriptions via Mercado Pago PIX, automatic access control (admin vs. subscriber), and a user onboarding flow.
+-   **Multi-User System**: Supports user registration with a free trial, monthly subscriptions via Mercado Pago PIX, automatic access control (admin vs. subscriber), and a user onboarding flow. Includes multi-tenant data isolation to prevent users from accessing or modifying other users' data.
 -   **UI/UX Decisions**: Bot-based interfaces (Telegram) utilize interactive keyboards, inline buttons, emojis for status indicators, and dynamic messages for intuitive navigation and feedback. Client information is displayed with single-touch copyable text sections using formatted code blocks. "Meus Clientes" button changed to "Gestão de Clientes" for non-admin users to provide complete client management functionality.
 
 ## External Dependencies

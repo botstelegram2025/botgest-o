@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Environment & secrets
+.env
+*.env
+baileys-server/auth_info_default/
+auth_info/
+auth/
+*.sqlite
+*.db
+
+# Runtime
+.DS_Store
+.vscode/
+.idea/
+.replit

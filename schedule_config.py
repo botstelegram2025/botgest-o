@@ -18,17 +18,48 @@ class ScheduleConfig:
         """Menu principal de configuração de horários"""
         try:
             agora = datetime.now(self.timezone)
+            
+            # Buscar horários personalizados do usuário
+            horario_envio = "09:00"
+            horario_verificacao = "09:00"
+            horario_limpeza = "02:00"
+            
+            try:
+                with self.bot.db.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        # Buscar horários personalizados
+                        cursor.execute('''
+                            SELECT chave, valor FROM configuracoes 
+                            WHERE chat_id_usuario = %s
+                            AND chave IN ('horario_envio_diario', 'horario_verificacao_diaria', 'horario_limpeza_fila')
+                        ''', (chat_id,))
+                        
+                        configs = cursor.fetchall()
+                        for config in configs:
+                            if config[0] == 'horario_envio_diario':
+                                horario_envio = config[1]
+                            elif config[0] == 'horario_verificacao_diaria':
+                                horario_verificacao = config[1]
+                            elif config[0] == 'horario_limpeza_fila':
+                                horario_limpeza = config[1]
+            except:
+                pass  # Usar horários padrão se falhar
+            
             mensagem = f"""⏰ CONFIGURAÇÕES DE HORÁRIOS
 
-📅 Horários Atuais (Brasília):
-🕘 Envio Diário: 09:00
+📅 Seus Horários Atuais (Brasília):
+🕘 Envio Diário: {horario_envio}
    └ Mensagens são enviadas automaticamente
 
-🕔 Verificação: 09:00  
+🕔 Verificação: {horario_verificacao}  
    └ Sistema verifica vencimentos e adiciona à fila
 
-🕚 Limpeza: 02:00
+🕚 Limpeza: {horario_limpeza}
    └ Remove mensagens antigas da fila
+
+💡 EXEMPLO DE CONFIGURAÇÃO PERSONALIZADA:
+   • Verificação: 18:00 (detecta vencimentos)
+   • Envio: 18:10 (envia 10 minutos depois)
 
 🌍 Timezone: America/Sao_Paulo
 ⏱️ Horário atual: {agora.strftime('%H:%M:%S')}
@@ -49,6 +80,9 @@ class ScheduleConfig:
                     {'text': '📊 Status Jobs', 'callback_data': 'status_jobs'}
                 ],
                 [
+                    {'text': '🔄 Reset para Padrão', 'callback_data': 'reset_horarios_padrao'}
+                ],
+                [
                     {'text': '🔙 Voltar', 'callback_data': 'voltar_configs'},
                     {'text': '🏠 Menu Principal', 'callback_data': 'menu_principal'}
                 ]
@@ -63,29 +97,55 @@ class ScheduleConfig:
     def edit_horario_envio(self, chat_id):
         """Configurar horário de envio de mensagens"""
         try:
-            mensagem = """📤 ALTERAR HORÁRIO DE ENVIO
+            # Buscar horário atual do usuário
+            horario_atual = "09:00"
+            try:
+                with self.bot.db.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute('''
+                            SELECT valor FROM configuracoes 
+                            WHERE chat_id_usuario = %s AND chave = 'horario_envio_diario'
+                        ''', (chat_id,))
+                        resultado = cursor.fetchone()
+                        if resultado:
+                            horario_atual = resultado[0]
+            except:
+                pass
+                
+            mensagem = f"""📤 ALTERAR HORÁRIO DE ENVIO
 
-⏰ Atual: 9:00 AM (Brasília)
+⏰ Atual: {horario_atual} (Brasília)
 
 Este horário define quando as mensagens da fila são processadas e enviadas via WhatsApp.
 
-💡 Recomendações:
-• Horário comercial (8h-18h)
-• Evitar madrugada e noite
-• Considere o perfil dos seus clientes
+💡 Recomendações para configuração sequencial:
+   • Se verificação às 18:00 → Envio às 18:10
+   • Se verificação às 09:00 → Envio às 09:15
+   • Deixe alguns minutos entre verificação e envio
+
+🎯 HORÁRIOS POPULARES:
+   • 09:00 (manhã) • 12:00 (almoço) • 18:00 (final tarde)
 
 🕐 Escolha o novo horário:"""
 
             inline_keyboard = []
-            horarios = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']
             
-            # Criar botões de horário em linhas de 3
-            for i in range(0, len(horarios), 3):
+            # Horários populares incluindo sequências de 18:00-18:10
+            horarios_populares = [
+                ['09:00', '09:15', '12:00'],
+                ['14:00', '16:00', '17:00'], 
+                ['17:28', '18:00', '18:10'],
+                ['19:00', '20:00', '21:00']
+            ]
+            
+            # Adicionar horários populares
+            for linha_horarios in horarios_populares:
                 linha = []
-                for j in range(3):
-                    if i + j < len(horarios):
-                        horario = horarios[i + j]
-                        linha.append({'text': horario, 'callback_data': f'set_envio_{horario.replace(":", "")}'})
+                for horario in linha_horarios:
+                    linha.append({
+                        'text': f'🕐 {horario}',
+                        'callback_data': f'set_envio_{horario.replace(":", "")}'
+                    })
                 inline_keyboard.append(linha)
 
             # Adicionar opção personalizada
@@ -101,27 +161,54 @@ Este horário define quando as mensagens da fila são processadas e enviadas via
     def edit_horario_verificacao(self, chat_id):
         """Configurar horário de verificação diária"""
         try:
-            mensagem = """🔔 ALTERAR HORÁRIO DE VERIFICAÇÃO
+            # Buscar horário atual do usuário
+            horario_atual = "09:00"
+            try:
+                with self.bot.db.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute('''
+                            SELECT valor FROM configuracoes 
+                            WHERE chat_id_usuario = %s AND chave = 'horario_verificacao_diaria'
+                        ''', (chat_id,))
+                        resultado = cursor.fetchone()
+                        if resultado:
+                            horario_atual = resultado[0]
+            except:
+                pass
+                
+            mensagem = f"""🔔 ALTERAR HORÁRIO DE VERIFICAÇÃO
 
-⏰ Atual: 9:00 AM (Brasília)
+⏰ Atual: {horario_atual} (Brasília)
 
 Esta verificação acontece uma vez por dia e:
-• Verifica todos os clientes vencendo
-• Agenda mensagens para o dia
-• Envia alerta para o administrador
+• Verifica todos os clientes vencidos
+• Agenda mensagens para envio posterior
+• Detecta vencimentos para notificação
+
+💡 CONFIGURAÇÃO SEQUENCIAL RECOMENDADA:
+   1. Verificação: 18:00 (detecta vencimentos)
+   2. Envio: 18:10 (processa 10 min depois)
 
 🕐 Escolha o novo horário:"""
 
             inline_keyboard = []
-            horarios = ['05:00', '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']
             
-            # Criar botões de horário em linhas de 3
-            for i in range(0, len(horarios), 3):
+            # Horários específicos para verificação incluindo 18:00
+            horarios_verificacao = [
+                ['06:00', '07:00', '08:00'],
+                ['09:00', '12:00', '15:00'],
+                ['17:00', '18:00', '19:00'],
+                ['20:00', '21:00', '22:00']
+            ]
+            
+            # Adicionar horários de verificação
+            for linha_horarios in horarios_verificacao:
                 linha = []
-                for j in range(3):
-                    if i + j < len(horarios):
-                        horario = horarios[i + j]
-                        linha.append({'text': horario, 'callback_data': f'set_verificacao_{horario.replace(":", "")}'})
+                for horario in linha_horarios:
+                    linha.append({
+                        'text': f'🕐 {horario}',
+                        'callback_data': f'set_verificacao_{horario.replace(":", "")}'
+                    })
                 inline_keyboard.append(linha)
 
             # Adicionar opção personalizada
@@ -170,123 +257,130 @@ Esta limpeza remove mensagens antigas da fila que não foram enviadas.
             self.bot.send_message(chat_id, "❌ Erro ao configurar horário.")
 
     def set_horario_envio(self, chat_id, novo_horario):
-        """Define novo horário de envio"""
+        """Define novo horário de envio com isolamento por usuário"""
         try:
             hora = int(novo_horario[:2])
             minuto = int(novo_horario[2:])
+            horario_formatado = f"{hora:02d}:{minuto:02d}"
             
-            # Salvar configuração no banco
-            self.bot.db.salvar_configuracao('horario_envio', f'{novo_horario[:2]}:{novo_horario[2:]}')
-            
-            # IMPORTANTE: Processar todos os clientes vencidos agora que mudou o horário
-            if hasattr(self.bot, 'scheduler') and self.bot.scheduler:
-                logger.info(f"Horário de envio alterado para {novo_horario[:2]}:{novo_horario[2:]} - processando todos os vencidos...")
+            # Salvar configuração com isolamento por usuário
+            try:
+                with self.bot.db.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        # Deletar configuração existente do usuário
+                        cursor.execute('''
+                            DELETE FROM configuracoes 
+                            WHERE chave = %s AND chat_id_usuario = %s
+                        ''', ('horario_envio_diario', chat_id))
+                        
+                        # Inserir nova configuração
+                        cursor.execute('''
+                            INSERT INTO configuracoes (chave, valor, descricao, chat_id_usuario)
+                            VALUES (%s, %s, %s, %s)
+                        ''', ('horario_envio_diario', horario_formatado, f'Horário personalizado do usuário', chat_id))
+                        
+                        conn.commit()
                 
-                # Processar todos os clientes vencidos imediatamente
-                enviadas = self.bot.scheduler.processar_todos_vencidos(forcar_reprocesso=False)
+                mensagem = f"✅ Horário de envio alterado para {horario_formatado}!\n\n"
+                mensagem += "📅 O novo horário foi aplicado ao seu perfil.\n"
+                mensagem += "🔄 Configuração ativa imediatamente.\n\n"
+                mensagem += f"👤 Usuário: {chat_id} - horário isolado"
                 
-                from apscheduler.triggers.cron import CronTrigger
+                self.bot.send_message(chat_id, mensagem)
+                # Voltar ao menu de horários
+                self.config_horarios_menu(chat_id)
                 
-                # Atualizar o job original com novo horário
-                self.bot.scheduler.scheduler.add_job(
-                    func=self.bot.scheduler._processar_envio_diario_9h,
-                    trigger=CronTrigger(hour=hora, minute=minuto, timezone=self.bot.scheduler.scheduler.timezone),
-                    id='envio_diario_9h',  # Usar o ID original
-                    name=f'Envio Diário às {novo_horario[:2]}:{novo_horario[2:]}',
-                    replace_existing=True
-                )
-                
-                mensagem = f"✅ Horário de envio alterado para {novo_horario[:2]}:{novo_horario[2:]}!\n\n"
-                if enviadas > 0:
-                    mensagem += f"📧 {enviadas} mensagens enviadas para clientes vencidos\n"
-                mensagem += f"📅 Próximo envio: {self._get_next_run_time('envio_diario_9h')}"
-            else:
-                mensagem = "❌ Agendador não disponível."
-            
-            self.bot.send_message(chat_id, mensagem)
-            # Voltar ao menu de horários
-            self.config_horarios_menu(chat_id)
+            except Exception as db_error:
+                logger.error(f"Erro de banco ao salvar horário de envio: {db_error}")
+                self.bot.send_message(chat_id, f"❌ Erro no banco: {db_error}")
             
         except Exception as e:
             logger.error(f"Erro ao definir horário de envio: {e}")
-            self.bot.send_message(chat_id, "❌ Erro ao alterar horário.")
+            self.bot.send_message(chat_id, f"❌ Erro ao alterar horário: {e}")
 
     def set_horario_verificacao(self, chat_id, novo_horario):
-        """Define novo horário de verificação"""
+        """Define novo horário de verificação com isolamento por usuário"""
         try:
             hora = int(novo_horario[:2])
             minuto = int(novo_horario[2:])
+            horario_formatado = f"{hora:02d}:{minuto:02d}"
             
-            # Salvar configuração no banco
-            self.bot.db.salvar_configuracao('horario_verificacao', f'{novo_horario[:2]}:{novo_horario[2:]}')
-            
-            # IMPORTANTE: Processar todos os clientes vencidos agora que mudou o horário
-            if hasattr(self.bot, 'scheduler') and self.bot.scheduler:
-                logger.info(f"Horário de verificação alterado para {novo_horario[:2]}:{novo_horario[2:]} - processando todos os vencidos...")
+            # Salvar configuração com isolamento por usuário
+            try:
+                with self.bot.db.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        # Deletar configuração existente do usuário
+                        cursor.execute('''
+                            DELETE FROM configuracoes 
+                            WHERE chave = %s AND chat_id_usuario = %s
+                        ''', ('horario_verificacao_diaria', chat_id))
+                        
+                        # Inserir nova configuração
+                        cursor.execute('''
+                            INSERT INTO configuracoes (chave, valor, descricao, chat_id_usuario)
+                            VALUES (%s, %s, %s, %s)
+                        ''', ('horario_verificacao_diaria', horario_formatado, f'Horário personalizado do usuário', chat_id))
+                        
+                        conn.commit()
                 
-                # Processar todos os clientes vencidos imediatamente
-                enviadas = self.bot.scheduler.processar_todos_vencidos(forcar_reprocesso=False)
+                mensagem = f"✅ Horário de verificação alterado para {horario_formatado}!\n\n"
+                mensagem += "📅 O novo horário foi aplicado ao seu perfil.\n"
+                mensagem += "🔄 Configuração ativa imediatamente.\n\n"
+                mensagem += f"👤 Usuário: {chat_id} - horário isolado"
                 
-                from apscheduler.triggers.cron import CronTrigger
+                self.bot.send_message(chat_id, mensagem)
+                # Voltar ao menu de horários
+                self.config_horarios_menu(chat_id)
                 
-                # Atualizar o job original com novo horário
-                self.bot.scheduler.scheduler.add_job(
-                    func=self.bot.scheduler._enviar_alerta_admin,
-                    trigger=CronTrigger(hour=hora, minute=minuto, timezone=self.bot.scheduler.scheduler.timezone),
-                    id='alerta_admin',  # Usar o ID original
-                    name=f'Verificação Diária às {novo_horario[:2]}:{novo_horario[2:]}',
-                    replace_existing=True
-                )
-                
-                mensagem = f"✅ Horário de verificação alterado para {novo_horario[:2]}:{novo_horario[2:]}!\n\n"
-                if enviadas > 0:
-                    mensagem += f"📧 {enviadas} mensagens enviadas para clientes vencidos\n"
-                mensagem += f"📅 Próxima verificação: {self._get_next_run_time('alerta_admin')}"
-            else:
-                mensagem = "❌ Agendador não disponível."
-            
-            self.bot.send_message(chat_id, mensagem)
-            # Voltar ao menu de horários
-            self.config_horarios_menu(chat_id)
+            except Exception as db_error:
+                logger.error(f"Erro de banco ao salvar horário de verificação: {db_error}")
+                self.bot.send_message(chat_id, f"❌ Erro no banco: {db_error}")
             
         except Exception as e:
             logger.error(f"Erro ao definir horário de verificação: {e}")
-            self.bot.send_message(chat_id, "❌ Erro ao alterar horário.")
+            self.bot.send_message(chat_id, f"❌ Erro ao alterar horário: {e}")
 
     def set_horario_limpeza(self, chat_id, novo_horario):
-        """Define novo horário de limpeza"""
+        """Define novo horário de limpeza com isolamento por usuário"""
         try:
             hora = int(novo_horario[:2])
             minuto = int(novo_horario[2:])
+            horario_formatado = f"{hora:02d}:{minuto:02d}"
             
-            # Salvar configuração no banco
-            self.bot.db.salvar_configuracao('horario_limpeza', f'{novo_horario[:2]}:{novo_horario[2:]}')
-            
-            # Recriar job de limpeza com novo horário usando o ID original
-            if hasattr(self.bot, 'scheduler') and self.bot.scheduler:
-                from apscheduler.triggers.cron import CronTrigger
+            # Salvar configuração com isolamento por usuário
+            try:
+                with self.bot.db.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        # Deletar configuração existente do usuário
+                        cursor.execute('''
+                            DELETE FROM configuracoes 
+                            WHERE chave = %s AND chat_id_usuario = %s
+                        ''', ('horario_limpeza_fila', chat_id))
+                        
+                        # Inserir nova configuração
+                        cursor.execute('''
+                            INSERT INTO configuracoes (chave, valor, descricao, chat_id_usuario)
+                            VALUES (%s, %s, %s, %s)
+                        ''', ('horario_limpeza_fila', horario_formatado, f'Horário personalizado do usuário', chat_id))
+                        
+                        conn.commit()
                 
-                # Atualizar o job original com novo horário
-                self.bot.scheduler.scheduler.add_job(
-                    func=self.bot.scheduler._limpar_fila_antiga,
-                    trigger=CronTrigger(hour=hora, minute=minuto, timezone=self.bot.scheduler.scheduler.timezone),
-                    id='limpar_fila',  # Usar o ID original
-                    name=f'Limpeza da Fila às {novo_horario[:2]}:{novo_horario[2:]}',
-                    replace_existing=True
-                )
+                mensagem = f"✅ Horário de limpeza alterado para {horario_formatado}!\n\n"
+                mensagem += "📅 O novo horário foi aplicado ao seu perfil.\n"
+                mensagem += "🔄 Configuração ativa imediatamente.\n\n"
+                mensagem += f"👤 Usuário: {chat_id} - horário isolado"
                 
-                mensagem = f"✅ Horário de limpeza alterado para {novo_horario[:2]}:{novo_horario[2:]}!\n\n"
-                mensagem += f"📅 Próxima limpeza: {self._get_next_run_time('limpar_fila')}"
-            else:
-                mensagem = "❌ Agendador não disponível."
-            
-            self.bot.send_message(chat_id, mensagem)
-            # Voltar ao menu de horários
-            self.config_horarios_menu(chat_id)
+                self.bot.send_message(chat_id, mensagem)
+                # Voltar ao menu de horários
+                self.config_horarios_menu(chat_id)
+                
+            except Exception as db_error:
+                logger.error(f"Erro de banco ao salvar horário de limpeza: {db_error}")
+                self.bot.send_message(chat_id, f"❌ Erro no banco: {db_error}")
             
         except Exception as e:
             logger.error(f"Erro ao definir horário de limpeza: {e}")
-            self.bot.send_message(chat_id, "❌ Erro ao alterar horário.")
+            self.bot.send_message(chat_id, f"❌ Erro ao alterar horário: {e}")
 
     def recriar_jobs(self, chat_id):
         """Recria todos os jobs do agendador com limpeza completa"""
@@ -338,6 +432,73 @@ Esta limpeza remove mensagens antigas da fila que não foram enviadas.
             logger.error(f"Erro ao recriar jobs: {e}")
             self.bot.send_message(chat_id, f"❌ Erro ao recriar jobs: {str(e)}")
     
+    def resetar_horarios_padrao(self, chat_id):
+        """Reseta todos os horários para os padrões do sistema"""
+        try:
+            # Horários padrão do sistema
+            horarios_padrao = {
+                'horario_envio_diario': '09:00',
+                'horario_verificacao_diaria': '09:00', 
+                'horario_limpeza_fila': '02:00',
+                'timezone_sistema': 'America/Sao_Paulo'
+            }
+            
+            # Salvar configurações padrão ISOLADAS POR USUÁRIO
+            for config_key, valor_padrao in horarios_padrao.items():
+                if self.bot.db:
+                    # CRÍTICO: Isolamento por usuário - cada usuário tem suas próprias configurações
+                    self.bot.db.salvar_configuracao(config_key, valor_padrao, chat_id_usuario=chat_id)
+            
+            # Recriar jobs com os novos horários
+            if hasattr(self.bot, 'scheduler') and self.bot.scheduler:
+                # Parar scheduler atual
+                if self.bot.scheduler.running:
+                    self.bot.scheduler.scheduler.shutdown(wait=True)
+                    self.bot.scheduler.running = False
+                
+                # Reiniciar com configurações padrão
+                from scheduler_v2_simple import SimpleScheduler
+                self.bot.scheduler = SimpleScheduler(self.bot.db, self.bot)
+                logger.info(f"Jobs recriados com horários padrão para usuário {chat_id}")
+            
+            mensagem = f"""✅ SEUS HORÁRIOS FORAM RESETADOS!
+
+🔄 Seus novos horários aplicados:
+🕘 Envio Diário: 09:00
+   └ Suas mensagens enviadas automaticamente
+
+🕔 Verificação: 09:00  
+   └ Verificação dos seus clientes diária
+
+🕚 Limpeza: 02:00
+   └ Limpeza da sua fila de mensagens
+
+🌍 Timezone: America/Sao_Paulo
+
+⚡ Status: Jobs recriados automaticamente
+📝 Efeito: Imediato - já operacional
+🔒 Isolamento: Configurações aplicadas apenas à sua conta
+
+💡 Nota: Estes são os horários padrão otimizados do sistema.
+👤 Usuário: {chat_id} - configurações isoladas"""
+
+            inline_keyboard = [
+                [
+                    {'text': '📊 Verificar Status', 'callback_data': 'status_jobs'},
+                    {'text': '⏰ Menu Horários', 'callback_data': 'config_horarios'}
+                ],
+                [
+                    {'text': '🏠 Menu Principal', 'callback_data': 'menu_principal'}
+                ]
+            ]
+
+            self.bot.send_message(chat_id, mensagem, 
+                                reply_markup={'inline_keyboard': inline_keyboard})
+
+        except Exception as e:
+            logger.error(f"Erro ao resetar horários padrão: {e}")
+            self.bot.send_message(chat_id, f"❌ Erro ao resetar horários: {str(e)}")
+
     def limpar_duplicatas(self, chat_id):
         """Remove jobs duplicados deixando apenas os únicos necessários"""
         try:
@@ -506,7 +667,7 @@ Digite o horário desejado no formato HH:MM
             logger.error(f"Erro ao solicitar horário personalizado: {e}")
             self.bot.send_message(chat_id, "❌ Erro ao configurar horário personalizado.")
 
-    def processar_horario_personalizado(self, chat_id, texto):
+    def processar_horario_personalizado(self, chat_id, texto, estado=None):
         """Processa horário personalizado digitado pelo usuário"""
         try:
             import re
@@ -520,7 +681,7 @@ Digite o horário desejado no formato HH:MM
                     "Tente novamente:")
                 return False
                 
-            estado = self.bot.conversation_states.get(chat_id)
+            estado = estado or self.bot.conversation_states.get(chat_id)
             
             if estado == 'aguardando_horario_envio':
                 horario_sem_dois_pontos = texto.replace(':', '')

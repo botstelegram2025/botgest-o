@@ -634,9 +634,12 @@ _Envie o comprovante após o pagamento!_ 📄"""
         """Insere configurações padrão do sistema"""
         configs_default = [
             ('empresa_nome', 'Sua Empresa IPTV', 'Nome da empresa exibido nas mensagens'),
-            ('empresa_pix', '', 'Chave PIX da empresa para pagamentos'),
-            ('empresa_titular', '', 'Nome do titular da conta PIX'),
             ('empresa_telefone', '', 'Telefone de contato da empresa'),
+            ('empresa_email', '', 'Email de contato da empresa'),
+            ('pix_chave', '', 'Chave PIX da empresa para pagamentos'),
+            ('pix_beneficiario', '', 'Nome do beneficiário PIX'),
+            ('suporte_telefone', '', 'Telefone de suporte ao cliente'),
+            ('suporte_email', '', 'Email de suporte ao cliente'),
             ('baileys_url', 'http://localhost:3000', 'URL da API Baileys WhatsApp'),
             ('baileys_status', 'desconectado', 'Status da conexão com WhatsApp'),
             ('notificacoes_ativas', 'true', 'Se as notificações automáticas estão ativas'),
@@ -777,9 +780,12 @@ _Obrigado por escolher nossos serviços!_ ✨""",
         try:
             configs_usuario = [
                 ('empresa_nome', f'{nome_usuario} IPTV', 'Nome da empresa exibido nas mensagens'),
-                ('empresa_pix', '', 'Chave PIX da empresa para pagamentos'),
-                ('empresa_titular', nome_usuario, 'Nome do titular da conta PIX'),
                 ('empresa_telefone', '', 'Telefone de contato da empresa'),
+                ('empresa_email', '', 'Email de contato da empresa'),
+                ('pix_chave', '', 'Chave PIX da empresa para pagamentos'),
+                ('pix_beneficiario', nome_usuario, 'Nome do titular da conta PIX'),
+                ('suporte_telefone', '', 'Telefone de suporte ao cliente'),
+                ('suporte_email', '', 'Email de suporte ao cliente'),
                 ('baileys_url', 'http://localhost:3000', 'URL da API Baileys WhatsApp'),
                 ('baileys_status', 'desconectado', 'Status da conexão com WhatsApp'),
                 ('notificacoes_ativas', 'true', 'Se as notificações automáticas estão ativas'),
@@ -1012,6 +1018,10 @@ _Obrigado por escolher nossos serviços!_ ✨""",
                         raise ValueError("Cliente não encontrado ou inativo")
                     
                     conn.commit()
+                    
+                    # CRÍTICO: Invalidar cache da lista de clientes para atualização imediata
+                    self.invalidate_cache('clientes_')
+                    logger.info(f"Cache de clientes invalidado após renovação")
                     logger.info(f"Vencimento atualizado para cliente ID {cliente_id}: {novo_vencimento}")
                     
         except Exception as e:
@@ -1182,6 +1192,9 @@ _Obrigado por escolher nossos serviços!_ ✨""",
                     
                     cursor.execute(query, valores)
                     conn.commit()
+                    
+                    # Invalidar cache para garantir que listas sejam atualizadas
+                    self.invalidate_cache("clientes")
                     
                     return cursor.rowcount > 0
                     
@@ -1409,26 +1422,22 @@ _Obrigado por escolher nossos serviços!_ ✨""",
             raise
     
     def obter_template_por_tipo(self, tipo, chat_id_usuario=None):
-        """Obtém template por tipo com isolamento por usuário"""
+        """Obtém template por tipo com isolamento por usuário - CRÍTICO: Nunca retornar templates de sistema (chat_id_usuario = NULL)"""
         try:
+            # PROTEÇÃO CRÍTICA: Se não especificar usuário, NÃO retornar templates do sistema
+            if chat_id_usuario is None:
+                logger.warning(f"Tentativa de obter template '{tipo}' sem especificar usuário - operação negada para proteção")
+                return None
+                
             with self.get_connection() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                    where_conditions = ["tipo = %s", "ativo = TRUE"]
-                    params = [tipo]
-                    
-                    # CRÍTICO: Filtrar por usuário para isolamento
-                    if chat_id_usuario is not None:
-                        where_conditions.append("chat_id_usuario = %s")
-                        params.append(chat_id_usuario)
-                    
-                    where_clause = " AND ".join(where_conditions)
-                    
-                    cursor.execute(f"""
+                    cursor.execute("""
                         SELECT id, nome, descricao, conteudo, tipo, ativo, uso_count, chat_id_usuario
                         FROM templates 
-                        WHERE {where_clause}
+                        WHERE tipo = %s AND ativo = TRUE AND chat_id_usuario = %s
+                        ORDER BY data_criacao DESC
                         LIMIT 1
-                    """, params)
+                    """, (tipo, chat_id_usuario))
                     
                     template = cursor.fetchone()
                     return dict(template) if template else None
@@ -1437,29 +1446,52 @@ _Obrigado por escolher nossos serviços!_ ✨""",
             logger.error(f"Erro ao obter template por tipo: {e}")
             raise
     
-    def buscar_template_por_id(self, template_id):
+    def buscar_template_por_id(self, template_id, chat_id_usuario=None):
         """Busca template por ID (alias para compatibilidade)"""
-        return self.obter_template(template_id)
+        return self.obter_template(template_id, chat_id_usuario)
     
-    def excluir_template(self, template_id):
-        """Exclui template definitivamente"""
+    def excluir_template(self, template_id, chat_id_usuario=None):
+        """Exclui template definitivamente com isolamento por usuário"""
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
+                    # CRÍTICO: Verificar se o template pertence ao usuário antes de excluir
+                    if chat_id_usuario is not None:
+                        cursor.execute("""
+                            SELECT id, nome, chat_id_usuario 
+                            FROM templates 
+                            WHERE id = %s AND chat_id_usuario = %s
+                        """, (template_id, chat_id_usuario))
+                        template = cursor.fetchone()
+                        if not template:
+                            raise ValueError("Template não encontrado ou não pertence ao usuário")
+                    else:
+                        # Se não especificar usuário, verificar se template existe
+                        cursor.execute("SELECT id, nome FROM templates WHERE id = %s", (template_id,))
+                        template = cursor.fetchone()
+                        if not template:
+                            raise ValueError("Template não encontrado")
+                    
                     # Primeiro, remover logs relacionados
                     cursor.execute("DELETE FROM logs_envio WHERE template_id = %s", (template_id,))
                     
                     # Depois, remover da fila de mensagens
                     cursor.execute("DELETE FROM fila_mensagens WHERE template_id = %s", (template_id,))
                     
-                    # Finalmente, excluir o template
-                    cursor.execute("DELETE FROM templates WHERE id = %s", (template_id,))
+                    # Finalmente, excluir o template com isolamento
+                    if chat_id_usuario is not None:
+                        cursor.execute("""
+                            DELETE FROM templates 
+                            WHERE id = %s AND chat_id_usuario = %s
+                        """, (template_id, chat_id_usuario))
+                    else:
+                        cursor.execute("DELETE FROM templates WHERE id = %s", (template_id,))
                     
                     if cursor.rowcount == 0:
-                        raise ValueError("Template não encontrado")
+                        raise ValueError("Template não pôde ser excluído")
                     
                     conn.commit()
-                    logger.info(f"Template ID {template_id} excluído definitivamente")
+                    logger.info(f"Template ID {template_id} excluído definitivamente por usuário {chat_id_usuario}")
                     
         except Exception as e:
             logger.error(f"Erro ao excluir template: {e}")
@@ -1486,8 +1518,8 @@ _Obrigado por escolher nossos serviços!_ ✨""",
             logger.error(f"Erro ao criar template: {e}")
             raise
     
-    def atualizar_template(self, template_id, nome=None, descricao=None, conteudo=None):
-        """Atualiza template"""
+    def atualizar_template(self, template_id, nome=None, descricao=None, conteudo=None, chat_id_usuario=None):
+        """Atualiza template com isolamento por usuário"""
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
@@ -1510,13 +1542,23 @@ _Obrigado por escolher nossos serviços!_ ✨""",
                         return False
                     
                     campos.append("data_atualizacao = CURRENT_TIMESTAMP")
-                    valores.append(template_id)
+                    
+                    where_conditions = ["id = %s"]
+                    where_params = [template_id]
+                    
+                    # CRÍTICO: Aplicar isolamento por usuário se especificado
+                    if chat_id_usuario is not None:
+                        where_conditions.append("chat_id_usuario = %s")
+                        where_params.append(chat_id_usuario)
+                    
+                    where_clause = " AND ".join(where_conditions)
                     
                     query = f"""
                         UPDATE templates 
                         SET {', '.join(campos)}
-                        WHERE id = %s
+                        WHERE {where_clause}
                     """
+                    valores.extend(where_params)
                     
                     cursor.execute(query, valores)
                     conn.commit()
@@ -1527,8 +1569,8 @@ _Obrigado por escolher nossos serviços!_ ✨""",
             logger.error(f"Erro ao atualizar template: {e}")
             raise
     
-    def atualizar_template_campo(self, template_id, campo, valor):
-        """Atualiza campo específico do template"""
+    def atualizar_template_campo(self, template_id, campo, valor, chat_id_usuario=None):
+        """Atualiza campo específico do template com isolamento por usuário"""
         try:
             campos_validos = ['nome', 'descricao', 'conteudo', 'tipo', 'ativo']
             if campo not in campos_validos:
@@ -1536,20 +1578,30 @@ _Obrigado por escolher nossos serviços!_ ✨""",
             
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
+                    where_conditions = ["id = %s"]
+                    params = [valor, template_id]
+                    
+                    # CRÍTICO: Aplicar isolamento por usuário se especificado
+                    if chat_id_usuario is not None:
+                        where_conditions.append("chat_id_usuario = %s")
+                        params.append(chat_id_usuario)
+                    
+                    where_clause = " AND ".join(where_conditions)
+                    
                     query = f"""
                         UPDATE templates 
                         SET {campo} = %s, data_atualizacao = CURRENT_TIMESTAMP
-                        WHERE id = %s
+                        WHERE {where_clause}
                     """
                     
-                    cursor.execute(query, (valor, template_id))
+                    cursor.execute(query, params)
                     conn.commit()
                     
                     if cursor.rowcount == 0:
-                        logger.warning(f"Template ID {template_id} não encontrado para atualização")
+                        logger.warning(f"Template ID {template_id} não encontrado para atualização ou não pertence ao usuário {chat_id_usuario}")
                         return False
                     
-                    logger.info(f"Template ID {template_id} - campo '{campo}' atualizado")
+                    logger.info(f"Template ID {template_id} - campo '{campo}' atualizado para usuário {chat_id_usuario}")
                     return True
                     
         except Exception as e:

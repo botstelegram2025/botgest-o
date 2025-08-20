@@ -1,16 +1,12 @@
 FROM python:3.11-slim
 
-# Diretório de trabalho
+# Set working directory
 WORKDIR /app
 
-# Copia o projeto
+# Copy all files
 COPY . /app
 
-# Variáveis úteis
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-# Dependências Python
+# Install Python dependencies
 RUN pip install --no-cache-dir \
     python-telegram-bot \
     psycopg2-binary \
@@ -23,12 +19,11 @@ RUN pip install --no-cache-dir \
     flask \
     gunicorn
 
-# Porta da aplicação (ajuste se necessário)
+# Expose port
 EXPOSE 5000
 
-# Inicia a aplicação
-# Se seu app for Flask com `app` em main.py, você pode usar gunicorn:
-# CMD ["gunicorn", "-b", "0.0.0.0:5000", "main:app"]
+# Make start.sh executable
+RUN chmod +x start.sh
 
-# Caso contrário, executa diretamente o main.py
-CMD ["python", "main.py"]
+# Run the application using the smart start script
+CMD ["./start.sh"]
