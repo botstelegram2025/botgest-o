@@ -907,9 +907,18 @@ Após 7 dias, continue usando por apenas R$ 20,00/mês."""
                 "Comando não reconhecido. Use /help para ver comandos disponíveis ou use os botões do menu.",
                 reply_markup=keyboard)
     
-    def handle_conversation_state(self, chat_id, text, user_state):
+    def handle_conversation_state(self, chat_id, text, user_state=None):
         """Processa estados de conversação"""
+        # Se user_state não foi passado, pegar do conversation_states
+        if user_state is None:
+            user_state = self.conversation_states.get(chat_id, {})
+            
         logger.info(f"Processando estado conversação - Chat: {chat_id}, Texto: {text}, Estado: {user_state}")
+        
+        # Verificar se é pareamento de WhatsApp
+        if user_state.get('action') == 'aguardando_telefone_pareamento':
+            self.processar_numero_pareamento(chat_id, text)
+            return
         
         if text == '❌ Cancelar':
             self.cancelar_operacao(chat_id)
@@ -2118,6 +2127,11 @@ Após o período de teste, continue usando por apenas R$ 20,00/mês!"""
             
             elif callback_data == 'baileys_qr_code':
                 self.gerar_qr_whatsapp(chat_id)
+            
+
+            
+            elif callback_data == 'baileys_pairing_code':
+                self.solicitar_numero_telefone_pareamento(chat_id)
             
             elif callback_data == 'baileys_status':
                 self.verificar_status_baileys(chat_id)
@@ -8940,12 +8954,18 @@ Exemplos comuns:
             # Criar botões sempre incluindo QR Code (exceto se já conectado)
             inline_keyboard = []
             
-            # Primeira linha - SEMPRE mostrar QR Code (forçar disponibilidade)
+            # Primeira linha - Opções de conexão
             primeira_linha = [
-                {'text': '📱 Gerar QR Code', 'callback_data': 'baileys_qr_code'},
-                {'text': '🔄 Verificar Status', 'callback_data': 'baileys_status'}
+                {'text': '🔗 QR Code', 'callback_data': 'baileys_qr_code'},
+                {'text': '📱 Código Pareamento', 'callback_data': 'baileys_pairing_code'}
             ]
             inline_keyboard.append(primeira_linha)
+            
+            # Terceira linha - Status e verificações
+            terceira_linha = [
+                {'text': '✅ Verificar Status', 'callback_data': 'baileys_status'}
+            ]
+            inline_keyboard.append(terceira_linha)
             
             # Outras funcionalidades
             inline_keyboard.extend([
@@ -8973,6 +8993,216 @@ Exemplos comuns:
         except Exception as e:
             logger.error(f"Erro ao mostrar menu Baileys: {e}")
             self.send_message(chat_id, "❌ Erro ao carregar menu WhatsApp.")
+
+    async def baileys_qr_quick(self, chat_id: int, context):
+        """Gera QR Code rápido do WhatsApp usando método otimizado"""
+        try:
+            logger.info(f"Gerando QR rápido para usuário {chat_id}")
+            
+            # Usar método QR rápido da API
+            result = self.baileys_api.get_qr_code_quick(chat_id)
+            
+            if result.get('success'):
+                qr_image_data = result.get('qr_image')
+                if qr_image_data and qr_image_data.startswith('data:image'):
+                    # Decodificar imagem base64
+                    image_data = base64.b64decode(qr_image_data.split(',')[1])
+                    
+                    note = result.get('note', '')
+                    method = result.get('method', 'quick')
+                    
+                    message = f"""⚡ *QR Code Rápido - WhatsApp*
+
+📱 *Instruções:*
+1. Abra o WhatsApp no seu celular
+2. Vá em *Configurações* → *Aparelhos Conectados*  
+3. Toque em *Conectar um aparelho*
+4. Escaneie o código QR abaixo
+
+⚡ *Método:* QR Code Alternativo (Instantâneo)
+🔧 *Status:* {result.get('instructions', '')}
+
+{f'📝 *Nota:* {note}' if note else ''}
+
+*Sessão:* `{result.get('session', 'N/A')}`"""
+
+                    # Criar teclado inline
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("🔄 QR Normal", callback_data="baileys_qr_code"),
+                            InlineKeyboardButton("📱 Código Pareamento", callback_data="baileys_pairing_code")
+                        ],
+                        [
+                            InlineKeyboardButton("📊 Verificar Status", callback_data="baileys_status"),
+                            InlineKeyboardButton("🔙 Menu WhatsApp", callback_data="baileys_menu")
+                        ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
+                    # Enviar foto com QR Code
+                    await context.bot.send_photo(
+                        chat_id=chat_id, 
+                        photo=BytesIO(image_data),
+                        caption=message,
+                        parse_mode='Markdown',
+                        reply_markup=reply_markup
+                    )
+                else:
+                    # Fallback para texto simples
+                    await self.baileys_send_qr_text(chat_id, result.get('qr_code', 'N/A'), context)
+            else:
+                # Se QR rápido falhou, mostrar erro
+                error_msg = result.get('error', 'Erro no QR rápido')
+                await self.baileys_send_error(chat_id, error_msg, context)
+
+        except Exception as e:
+            logger.error(f"Erro no QR rápido: {e}")
+            await self.baileys_send_error(chat_id, f"Erro no QR rápido: {str(e)}", context)
+    
+
+    def limpar_conexao_baileys(self, chat_id):
+        """Limpa conexão do WhatsApp do usuário"""
+        try:
+            logger.info(f"Limpando conexão Baileys para usuário {chat_id}")
+            
+            # Usar session específica do usuário
+            session_id = f"user_{chat_id}"
+            
+            # Chamar endpoint de limpeza da API Baileys
+            try:
+                response = requests.post(f"http://localhost:3000/clear-session/{session_id}", timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('success'):
+                        mensagem = f"""🧹 *Conexão Limpa com Sucesso*
+
+✅ *Sessão removida:* `{session_id}`
+🔄 *Estado resetado*
+📱 *Arquivos de autenticação excluídos*
+
+💡 *Próximos passos:*
+• Gere um novo QR Code para reconectar
+• Ou use código de pareamento
+• A conexão anterior foi completamente removida"""
+
+                        inline_keyboard = [
+                            [
+                                {'text': '🔗 Gerar QR Code', 'callback_data': 'baileys_qr_code'},
+                                {'text': '📱 Código Pareamento', 'callback_data': 'baileys_pairing_code'}
+                            ],
+                            [
+                                {'text': '📊 Verificar Status', 'callback_data': 'baileys_status'},
+                                {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
+                            ]
+                        ]
+                        
+                        self.send_message(chat_id, mensagem,
+                                        parse_mode='Markdown',
+                                        reply_markup={'inline_keyboard': inline_keyboard})
+                    else:
+                        error_msg = data.get('error', 'Erro desconhecido')
+                        self.send_message(chat_id, f"❌ Falha ao limpar conexão: {error_msg}")
+                else:
+                    self.send_message(chat_id, f"❌ Erro na API: Status {response.status_code}")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Erro de conexão com API Baileys: {e}")
+                self.send_message(chat_id, 
+                    "❌ *Erro de Comunicação*\n\n"
+                    "Não foi possível conectar com a API Baileys.\n"
+                    "Verifique se o serviço está rodando em localhost:3000",
+                    parse_mode='Markdown')
+                
+        except Exception as e:
+            logger.error(f"Erro ao limpar conexão: {e}")
+            self.send_message(chat_id, f"❌ Erro interno: {str(e)}")
+    
+    def reiniciar_whatsapp(self, chat_id):
+        """Reinicia conexão do WhatsApp do usuário"""
+        try:
+            logger.info(f"Reiniciando WhatsApp para usuário {chat_id}")
+            
+            # Usar session específica do usuário
+            session_id = f"user_{chat_id}"
+            
+            # Primeiro limpar a conexão atual
+            try:
+                clear_response = requests.post(f"http://localhost:3000/clear-session/{session_id}", timeout=10)
+                
+                # Aguardar um momento para limpeza completa
+                import time
+                time.sleep(2)
+                
+                # Tentar reconectar
+                reconnect_response = requests.post(f"http://localhost:3000/reconnect/{session_id}", timeout=15)
+                
+                if reconnect_response.status_code == 200:
+                    data = reconnect_response.json()
+                    if data.get('success'):
+                        mensagem = f"""🔄 *WhatsApp Reiniciado com Sucesso*
+
+✅ *Sessão:* `{session_id}`
+🔄 *Conexão resetada e reconectada*
+📱 *Pronto para usar*
+
+💡 *Status:* Conexão restabelecida
+🎯 *Agora você pode enviar mensagens normalmente*"""
+
+                        inline_keyboard = [
+                            [
+                                {'text': '📊 Verificar Status', 'callback_data': 'baileys_status'},
+                                {'text': '🧪 Teste de Envio', 'callback_data': 'baileys_test'}
+                            ],
+                            [
+                                {'text': '📋 Ver Logs', 'callback_data': 'baileys_logs'},
+                                {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
+                            ]
+                        ]
+                        
+                        self.send_message(chat_id, mensagem,
+                                        parse_mode='Markdown',
+                                        reply_markup={'inline_keyboard': inline_keyboard})
+                    else:
+                        error_msg = data.get('error', 'Erro na reconexão')
+                        
+                        # Se falhou reconectar, oferecer QR Code
+                        mensagem_erro = f"""⚠️ *Reinício Parcial*
+
+🧹 Conexão anterior foi limpa
+❌ Falha na reconexão automática: {error_msg}
+
+💡 *Para completar o reinício:*
+• Gere um novo QR Code
+• Ou use código de pareamento"""
+
+                        inline_keyboard = [
+                            [
+                                {'text': '🔗 Gerar QR Code', 'callback_data': 'baileys_qr_code'},
+                                {'text': '📱 Código Pareamento', 'callback_data': 'baileys_pairing_code'}
+                            ],
+                            [
+                                {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
+                            ]
+                        ]
+                        
+                        self.send_message(chat_id, mensagem_erro,
+                                        parse_mode='Markdown',
+                                        reply_markup={'inline_keyboard': inline_keyboard})
+                else:
+                    self.send_message(chat_id, f"❌ Erro na API de reconexão: Status {reconnect_response.status_code}")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Erro de conexão com API Baileys: {e}")
+                self.send_message(chat_id, 
+                    "❌ *Erro de Comunicação*\n\n"
+                    "Não foi possível conectar com a API Baileys.\n"
+                    "Verifique se o serviço está rodando em localhost:3000",
+                    parse_mode='Markdown')
+                
+        except Exception as e:
+            logger.error(f"Erro ao reiniciar WhatsApp: {e}")
+            self.send_message(chat_id, f"❌ Erro interno: {str(e)}")
     
     def verificar_status_baileys(self, chat_id):
         """Verifica status da API Baileys em tempo real"""
@@ -9097,7 +9327,8 @@ Exemplos comuns:
                     qr_image = qr_result.get('qr_image')
                     
                     if qr_code:
-                        mensagem = """📱 *QR CODE WHATSAPP GERADO*
+                        # Enviar instruções primeiro
+                        mensagem = """✅ *QR CODE GERADO COM SUCESSO*
 
 📷 *Como conectar:*
 1️⃣ Abra o WhatsApp no seu celular
@@ -9107,55 +9338,71 @@ Exemplos comuns:
 
 ⏰ *QR Code expira em 60 segundos*"""
                         
-                        # Enviar instruções primeiro
                         self.send_message(chat_id, mensagem, parse_mode='Markdown')
                         
-                        # Enviar o QR code como imagem (se disponível)
-                        
-                        if qr_image:
-                            # Converter base64 para bytes e enviar como foto
-                            import base64
-                            import io
-                            
-                            # Remover o prefixo 'data:image/png;base64,' se existir
-                            if qr_image.startswith('data:image/png;base64,'):
-                                qr_image = qr_image.replace('data:image/png;base64,', '')
-                            
-                            # Decodificar base64
-                            image_bytes = base64.b64decode(qr_image)
-                            
-                            # Enviar foto via Telegram Bot API
-                            files = {
-                                'photo': ('qr_code.png', io.BytesIO(image_bytes), 'image/png')
-                            }
-                            
-                            data_photo = {
-                                'chat_id': chat_id,
-                                'caption': '📱 *Escaneie este QR Code com WhatsApp*',
-                                'parse_mode': 'Markdown'
-                            }
-                            
-                            # Enviar via requests
-                            photo_response = requests.post(
-                                f"https://api.telegram.org/bot{self.token}/sendPhoto",
-                                data=data_photo,
-                                files=files,
-                                timeout=30
-                            )
-                            
-                            if photo_response.status_code != 200:
-                                logger.error(f"Erro ao enviar QR Code: {photo_response.text}")
-                                # Fallback para texto se falhar
+                        # Tentar enviar imagem QR Code
+                        if qr_image and qr_image.startswith('data:image/png;base64,'):
+                            try:
+                                import base64
+                                import io
+                                
+                                # Extrair dados base64 da imagem
+                                image_data = qr_image.split(',')[1]
+                                image_bytes = base64.b64decode(image_data)
+                                
+                                # Enviar foto via requests diretamente
+                                files = {
+                                    'photo': ('qr_code.png', io.BytesIO(image_bytes), 'image/png')
+                                }
+                                
+                                data_photo = {
+                                    'chat_id': chat_id,
+                                    'caption': '📱 *Escaneie este QR Code com WhatsApp*',
+                                    'parse_mode': 'Markdown'
+                                }
+                                
+                                # Enviar via requests
+                                photo_response = requests.post(
+                                    f"https://api.telegram.org/bot{self.token}/sendPhoto",
+                                    data=data_photo,
+                                    files=files,
+                                    timeout=30
+                                )
+                                
+                                if photo_response.status_code != 200:
+                                    logger.error(f"Erro ao enviar QR Code: {photo_response.text}")
+                                    # Fallback para texto se falhar
+                                    self.send_message(chat_id, f"```\n{qr_code}\n```", parse_mode='Markdown')
+                                else:
+                                    logger.info("QR Code enviado como imagem com sucesso!")
+                                    
+                            except Exception as e:
+                                logger.error(f"Erro ao processar imagem QR: {e}")
+                                # Fallback para código texto se imagem falhar
                                 self.send_message(chat_id, f"```\n{qr_code}\n```", parse_mode='Markdown')
                         else:
                             # Fallback para texto se não houver imagem
                             self.send_message(chat_id, f"```\n{qr_code}\n```", parse_mode='Markdown')
                         
+                        # NOVA FUNCIONALIDADE: Oferecer código de pareamento como alternativa
+                        mensagem_alternativa = """📱 *ALTERNATIVA AO QR CODE*
+
+🔢 *Prefere usar código de pareamento?*
+• Clique no botão abaixo
+• Digite seu número de telefone
+• Receba um código específico para seu número
+• Use no WhatsApp: *Configurações → Aparelhos conectados → Insira o código*
+
+⚠️ *IMPORTANTE:* O código deve ser vinculado ao SEU número de telefone para funcionar corretamente."""
+                        
+                        self.send_message(chat_id, mensagem_alternativa, parse_mode='Markdown')
+                        
                         # Botões de ação
                         inline_keyboard = [[
                             {'text': '🔄 Novo QR Code', 'callback_data': 'baileys_qr_code'},
-                            {'text': '✅ Verificar Conexão', 'callback_data': 'baileys_status'}
+                            {'text': '📱 Configurar Telefone', 'callback_data': 'baileys_pairing_code'}
                         ], [
+                            {'text': '✅ Verificar Conexão', 'callback_data': 'baileys_status'},
                             {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
                         ]]
                         
@@ -9207,6 +9454,152 @@ Acesse: http://localhost:3000/status"""
                 "❌ *Erro crítico no sistema*\n\n"
                 "Contate o administrador do sistema.",
                 parse_mode='Markdown')
+    
+    def solicitar_numero_telefone_pareamento(self, chat_id):
+        """Solicita número de telefone para gerar código específico"""
+        try:
+            # Configurar estado de conversa
+            self.conversation_states[chat_id] = {
+                'action': 'aguardando_telefone_pareamento',
+                'step': 1
+            }
+            
+            mensagem = """📱 *CÓDIGO DE PAREAMENTO WHATSAPP*
+
+📞 *Digite seu número de telefone:*
+
+✅ *Formatos aceitos:*
+• `11999999999` (DDD + número)
+• `5511999999999` (com código do país)
+• `(11) 99999-9999` (formatado)
+
+⚠️ *IMPORTANTE:*
+• Use o MESMO número onde você quer conectar o WhatsApp
+• O código só funciona no número informado
+• Não use números de terceiros"""
+
+            inline_keyboard = [[
+                {'text': '❌ Cancelar', 'callback_data': 'baileys_menu'}
+            ]]
+            
+            self.send_message(chat_id, mensagem, 
+                            parse_mode='Markdown',
+                            reply_markup={'inline_keyboard': inline_keyboard})
+                            
+        except Exception as e:
+            logger.error(f"Erro ao solicitar número: {e}")
+            self.send_message(chat_id, "❌ Erro ao configurar código de pareamento.")
+
+    def processar_numero_pareamento(self, chat_id, text):
+        """Processa número e gera código de pareamento específico"""
+        try:
+            # Limpar estado de conversa
+            if chat_id in self.conversation_states:
+                del self.conversation_states[chat_id]
+            
+            # Validar e limpar número
+            import re
+            clean_phone = re.sub(r'\D', '', text.strip())
+            
+            # Validar formato brasileiro
+            if len(clean_phone) < 10:
+                self.send_message(chat_id, 
+                    """❌ *Número muito curto*
+
+📱 *Use o formato:* `11999999999`
+🔧 *Tente novamente:* Clique em 📱 Configurar Telefone""",
+                    parse_mode='Markdown')
+                return
+                
+            # Adicionar código do país se necessário
+            if len(clean_phone) == 10:  # Formato antigo: 1199999999
+                clean_phone = "55" + clean_phone
+            elif len(clean_phone) == 11:  # Formato novo: 11999999999
+                clean_phone = "55" + clean_phone
+            elif not clean_phone.startswith("55"):
+                clean_phone = "55" + clean_phone
+                
+            self.send_message(chat_id, f"🔄 *Gerando código para {clean_phone}...*", parse_mode='Markdown')
+            
+            # Gerar código específico para o número
+            pairing_result = self.baileys_api.request_pairing_code(chat_id, clean_phone)
+            
+            if pairing_result.get('success'):
+                pairing_code = pairing_result.get('pairing_code')
+                phone_formatted = pairing_result.get('phone_number', clean_phone)
+                
+                mensagem_sucesso = f"""✅ *CÓDIGO GERADO COM SUCESSO*
+
+📱 *Número:* {phone_formatted}
+🔢 *Código:* `{pairing_code}`
+
+📋 *INSTRUÇÕES IMPORTANTES:*
+1️⃣ Abra o WhatsApp no celular **{phone_formatted}**
+2️⃣ Configurações → Aparelhos conectados
+3️⃣ Conectar um aparelho → **Insira o código**
+4️⃣ Digite exatamente: `{pairing_code}`
+
+⏰ *Código expira em 60 segundos*
+⚠️ *Código só funciona no número {phone_formatted}*"""
+
+                inline_keyboard = [[
+                    {'text': '🔄 Gerar Novo Código', 'callback_data': 'baileys_pairing_code'},
+                    {'text': '✅ Verificar Status', 'callback_data': 'baileys_status'}
+                ], [
+                    {'text': '🔗 Usar QR Code', 'callback_data': 'baileys_qr_code'},
+                    {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
+                ]]
+                
+                self.send_message(chat_id, mensagem_sucesso, 
+                                parse_mode='Markdown',
+                                reply_markup={'inline_keyboard': inline_keyboard})
+            else:
+                error_msg = pairing_result.get('error', 'Erro desconhecido')
+                # Mensagem melhorada para Connection Closed
+                if 'Connection Closed' in error_msg:
+                    mensagem_erro = """⚠️ *CÓDIGO DE PAREAMENTO INDISPONÍVEL*
+
+🔍 *Situação:* WhatsApp está rejeitando conexões para código de pareamento no momento.
+
+✅ *ALTERNATIVAS RECOMENDADAS:*
+
+**OPÇÃO 1: QR Code (Mais Confiável)**
+• Clique em "🔗 Usar QR Code" abaixo
+• Use outro dispositivo para escanear
+
+**OPÇÃO 2: WhatsApp Web Direto**
+• Acesse: web.whatsapp.com
+• Escaneie o QR code
+
+**OPÇÃO 3: Tente Mais Tarde**
+• Código de pareamento pode funcionar esporadicamente
+• Aguarde alguns minutos e tente novamente
+
+💡 *O QR Code é sempre 100% funcional*"""
+                else:
+                    mensagem_erro = f"""❌ *Erro no código de pareamento*
+
+🔍 *Problema:* {error_msg}
+
+✅ *ALTERNATIVAS:*
+• Use "🔗 Usar QR Code" (mais confiável)
+• Acesse web.whatsapp.com diretamente
+• Verifique se o número está correto"""
+
+                inline_keyboard = [[
+                    {'text': '🔗 Usar QR Code', 'callback_data': 'baileys_qr_code'},
+                    {'text': '🔄 Tentar Novamente', 'callback_data': 'baileys_pairing_code'}
+                ], [
+                    {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
+                ]]
+                
+                self.send_message(chat_id, mensagem_erro,
+                    parse_mode='Markdown',
+                    reply_markup={'inline_keyboard': inline_keyboard})
+                    
+        except Exception as e:
+            logger.error(f"Erro ao processar número: {e}")
+            self.send_message(chat_id, "❌ Erro interno ao processar número.")
     
     def testar_envio_whatsapp(self, chat_id):
         """Testa envio de mensagem pelo WhatsApp"""
@@ -11961,6 +12354,152 @@ Vamos cadastrar um cliente passo a passo.
     except Exception as e:
         logger.error(f"Erro ao iniciar cadastro: {e}")
         telegram_bot.send_message(chat_id, "❌ Erro ao iniciar cadastro.")
+
+    def solicitar_numero_telefone_pareamento(self, chat_id):
+        """Solicita número de telefone para gerar código específico"""
+        try:
+            # Configurar estado de conversa
+            self.conversation_states[chat_id] = {
+                'action': 'aguardando_telefone_pareamento',
+                'step': 1
+            }
+            
+            mensagem = """📱 *CÓDIGO DE PAREAMENTO WHATSAPP*
+
+📞 *Digite seu número de telefone:*
+
+✅ *Formatos aceitos:*
+• `11999999999` (DDD + número)
+• `5511999999999` (com código do país)
+• `(11) 99999-9999` (formatado)
+
+⚠️ *IMPORTANTE:*
+• Use o MESMO número onde você quer conectar o WhatsApp
+• O código só funciona no número informado
+• Não use números de terceiros"""
+
+            inline_keyboard = [[
+                {'text': '❌ Cancelar', 'callback_data': 'baileys_menu'}
+            ]]
+            
+            self.send_message(chat_id, mensagem, 
+                            parse_mode='Markdown',
+                            reply_markup={'inline_keyboard': inline_keyboard})
+                            
+        except Exception as e:
+            logger.error(f"Erro ao solicitar número: {e}")
+            self.send_message(chat_id, "❌ Erro ao configurar código de pareamento.")
+
+    def processar_numero_pareamento(self, chat_id, text):
+        """Processa número e gera código de pareamento específico"""
+        try:
+            # Limpar estado de conversa
+            if chat_id in self.conversation_states:
+                del self.conversation_states[chat_id]
+            
+            # Validar e limpar número
+            import re
+            clean_phone = re.sub(r'\D', '', text.strip())
+            
+            # Validar formato brasileiro
+            if len(clean_phone) < 10:
+                self.send_message(chat_id, 
+                    """❌ *Número muito curto*
+
+📱 *Use o formato:* `11999999999`
+🔧 *Tente novamente:* Clique em 📱 Configurar Telefone""",
+                    parse_mode='Markdown')
+                return
+                
+            # Adicionar código do país se necessário
+            if len(clean_phone) == 10:  # Formato antigo: 1199999999
+                clean_phone = "55" + clean_phone
+            elif len(clean_phone) == 11:  # Formato novo: 11999999999
+                clean_phone = "55" + clean_phone
+            elif not clean_phone.startswith("55"):
+                clean_phone = "55" + clean_phone
+                
+            self.send_message(chat_id, f"🔄 *Gerando código para {clean_phone}...*", parse_mode='Markdown')
+            
+            # Gerar código específico para o número
+            pairing_result = self.baileys_api.request_pairing_code(chat_id, clean_phone)
+            
+            if pairing_result.get('success'):
+                pairing_code = pairing_result.get('pairing_code')
+                phone_formatted = pairing_result.get('phone_number', clean_phone)
+                
+                mensagem_sucesso = f"""✅ *CÓDIGO GERADO COM SUCESSO*
+
+📱 *Número:* {phone_formatted}
+🔢 *Código:* `{pairing_code}`
+
+📋 *INSTRUÇÕES IMPORTANTES:*
+1️⃣ Abra o WhatsApp no celular **{phone_formatted}**
+2️⃣ Configurações → Aparelhos conectados
+3️⃣ Conectar um aparelho → **Insira o código**
+4️⃣ Digite exatamente: `{pairing_code}`
+
+⏰ *Código expira em 60 segundos*
+⚠️ *Código só funciona no número {phone_formatted}*"""
+
+                inline_keyboard = [[
+                    {'text': '🔄 Gerar Novo Código', 'callback_data': 'baileys_pairing_code'},
+                    {'text': '✅ Verificar Status', 'callback_data': 'baileys_status'}
+                ], [
+                    {'text': '🔗 Usar QR Code', 'callback_data': 'baileys_qr_code'},
+                    {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
+                ]]
+                
+                self.send_message(chat_id, mensagem_sucesso, 
+                                parse_mode='Markdown',
+                                reply_markup={'inline_keyboard': inline_keyboard})
+            else:
+                error_msg = pairing_result.get('error', 'Erro desconhecido')
+                # Mensagem melhorada para Connection Closed
+                if 'Connection Closed' in error_msg:
+                    mensagem_erro = """⚠️ *CÓDIGO DE PAREAMENTO INDISPONÍVEL*
+
+🔍 *Situação:* WhatsApp está rejeitando conexões para código de pareamento no momento.
+
+✅ *ALTERNATIVAS RECOMENDADAS:*
+
+**OPÇÃO 1: QR Code (Mais Confiável)**
+• Clique em "🔗 Usar QR Code" abaixo
+• Use outro dispositivo para escanear
+
+**OPÇÃO 2: WhatsApp Web Direto**
+• Acesse: web.whatsapp.com
+• Escaneie o QR code
+
+**OPÇÃO 3: Tente Mais Tarde**
+• Código de pareamento pode funcionar esporadicamente
+• Aguarde alguns minutos e tente novamente
+
+💡 *O QR Code é sempre 100% funcional*"""
+                else:
+                    mensagem_erro = f"""❌ *Erro no código de pareamento*
+
+🔍 *Problema:* {error_msg}
+
+✅ *ALTERNATIVAS:*
+• Use "🔗 Usar QR Code" (mais confiável)
+• Acesse web.whatsapp.com diretamente
+• Verifique se o número está correto"""
+
+                inline_keyboard = [[
+                    {'text': '🔗 Usar QR Code', 'callback_data': 'baileys_qr_code'},
+                    {'text': '🔄 Tentar Novamente', 'callback_data': 'baileys_pairing_code'}
+                ], [
+                    {'text': '🔙 Menu WhatsApp', 'callback_data': 'baileys_menu'}
+                ]]
+                
+                self.send_message(chat_id, mensagem_erro,
+                    parse_mode='Markdown',
+                    reply_markup={'inline_keyboard': inline_keyboard})
+                    
+        except Exception as e:
+            logger.error(f"Erro ao processar número: {e}")
+            self.send_message(chat_id, "❌ Erro interno ao processar número.")
 
 def relatorios_usuario_function(chat_id):
     """Menu de relatórios para usuários não-admin"""

@@ -9,8 +9,6 @@ import sys
 import json
 import logging
 from flask import Flask, request, jsonify
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 import asyncio
 from datetime import datetime
 import pytz
@@ -155,26 +153,12 @@ def health_check():
             'timestamp': datetime.now(pytz.timezone('America/Sao_Paulo')).isoformat()
         }), 500
 
-@limiter.limit('30 per minute')
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Endpoint para receber updates do Telegram via webhook"""
     global telegram_app, bot_initialized
     
     if not bot_initialized:
-    # Segurança: validar secret do Telegram no header
-    expected_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
-    provided_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if expected_secret:
-        if provided_secret != expected_secret:
-            try:
-                remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-            except Exception:
-                remote_ip = "unknown"
-            app.logger.warning("Webhook secret inválido", extra={"remote_ip": remote_ip})
-            return jsonify({"error": "unauthorized"}), 401
-    else:
-        app.logger.warning("TELEGRAM_WEBHOOK_SECRET não definido - defina em produção para maior segurança")
         logger.error("Bot não inicializado")
         return jsonify({'error': 'Bot not initialized'}), 500
     
@@ -267,16 +251,4 @@ if __name__ == '__main__':
     
     # Iniciar servidor Flask
     # Para produção, usar Gunicorn: gunicorn -w 1 -b 0.0.0.0:5000 wsgi:app
-
-# Rate limiting / Anti-abuso
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["60 per minute"],  # limite padrão seguro
-    storage_uri="memory://"
-)
     app.run(host=host, port=port, debug=False, threaded=True)
-
-@app.route("/healthz", methods=["GET"])
-def healthz():
-    return jsonify({"status": "ok"}), 200
